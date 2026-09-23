@@ -67,17 +67,16 @@ const KeyRound = makeIcon(<>
   <path d="M2.5 21.5L11 13" />
   <path d="M16.5 3a5.5 5.5 0 1 0 4.5 8.66V16h-2.5v2.5H16V21h-2.5l-2.16-2.16A5.5 5.5 0 0 0 16.5 3z" />
 </>);
+const Calendar = makeIcon(<>
+  <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+  <line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
+</>);
+const Globe = makeIcon(<>
+  <circle cx="12" cy="12" r="10" />
+  <line x1="2" y1="12" x2="22" y2="12" />
+  <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+</>);
 
-
-const Home = makeIcon(<>
-  <path d="M3 11.5 12 4l9 7.5" /><path d="M5 10.5V21h14V10.5" /><path d="M9 21v-6h6v6" />
-</>);
-const DollarSign = makeIcon(<>
-  <line x1="12" y1="1" x2="12" y2="23" /><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7H14.5a3.5 3.5 0 0 1 0 7H6" />
-</>);
-const CalendarDays = makeIcon(<>
-  <rect x="3" y="5" width="18" height="16" rx="2" /><line x1="16" y1="3" x2="16" y2="7" /><line x1="8" y1="3" x2="8" y2="7" /><line x1="3" y1="11" x2="21" y2="11" />
-</>);
 
 const ACCENT_HEX = "#4B2E70";
 const BOTTOM_TAB_HEIGHT = 64;
@@ -468,6 +467,10 @@ const TABLE_KEYS = {
   bugReports: {
     endpoint: "/api/bug-reports", arrayKey: "bugReports", idField: "id",
     jsonFields: [], boolFields: [],
+  },
+  crewSchedules: {
+    endpoint: "/api/crew-schedules", arrayKey: "schedules", idField: "username",
+    jsonFields: ["schedule"], boolFields: [],
   },
 };
 
@@ -1497,6 +1500,7 @@ function BusinessView({ onEditRequest, onPrefillEstimate, userRole }) {
   const [showAvailabilityEditor, setShowAvailabilityEditor] = useState(false);
   const [availabilitySaving, setAvailabilitySaving] = useState(false);
   const [availabilitySavedFeedback, setAvailabilitySavedFeedback] = useState(false);
+  const [crewRoster, setCrewRoster] = useState([]);
 
   const [bookings, setBookings] = useState([]);
   const [bookingsLoading, setBookingsLoading] = useState(true);
@@ -1548,7 +1552,19 @@ function BusinessView({ onEditRequest, onPrefillEstimate, userRole }) {
     loadActiveTimer();
     loadTimeLogs();
     loadTodayOrder();
+    loadCrewRoster();
   }, []);
+
+  async function loadCrewRoster() {
+    const table = await loadTable(TABLE_KEYS.crewSchedules, false);
+    setCrewRoster(Object.values(table));
+  }
+
+  async function assignJob(booking, username) {
+    const updated = { ...booking, assignedTo: username || null };
+    setBookings((prev) => prev.map((b) => (b.key === booking.key ? updated : b)));
+    await setTableRecord(TABLE_KEYS.bookings, true, booking.key, updated);
+  }
 
   async function loadTodayOrder() {
     const todayKeyISO = new Date().toISOString().slice(0, 10);
@@ -1593,6 +1609,14 @@ function BusinessView({ onEditRequest, onPrefillEstimate, userRole }) {
   }
 
   async function startTimer(job) {
+    // Accountability rule: every job must have a before-service photo on file
+    // before work can begin. This protects both the customer and the crew by
+    // documenting the property's pre-service condition.
+    if (!job.hasBeforePhoto) {
+      setCompletionToast("Before photo required — document the property before starting work.");
+      setTimeout(() => setCompletionToast(""), 5000);
+      return false;
+    }
     const t = {
       jobTimestamp: job.timestamp, customerName: job.customerName || "",
       address: job.address || "", startedAt: Date.now(),
@@ -1601,7 +1625,12 @@ function BusinessView({ onEditRequest, onPrefillEstimate, userRole }) {
       await localStore.set("active-timer", JSON.stringify(t), false);
       setActiveTimer(t);
       setNowTick(Date.now());
-    } catch (e) {}
+      return true;
+    } catch (e) {
+      setCompletionToast("Couldn't start the job timer — try again.");
+      setTimeout(() => setCompletionToast(""), 4000);
+      return false;
+    }
   }
 
   async function loadTimeLogs() {
@@ -1720,6 +1749,14 @@ function BusinessView({ onEditRequest, onPrefillEstimate, userRole }) {
   }
 
   async function deletePhoto(item, kind) {
+    // Before-service photos are accountability records and shouldn't be silently
+    // removable after capture — that's the whole point of requiring one. The owner
+    // keeps an override for a genuine mistake (wrong photo, blurry shot); crew does
+    // not, since letting crew redo it would defeat the purpose.
+    if (kind === "before" && userRole !== "owner") {
+      setPhotoError("Before-service photos are required accountability records and can't be deleted from the visit. Ask the owner if this one needs to be replaced.");
+      return;
+    }
     const storageKey = kind === "before" ? `photo-before:${item.timestamp}` : `photo:${item.timestamp}`;
     const flagField = kind === "before" ? "hasBeforePhoto" : "hasPhoto";
     try {
@@ -1743,6 +1780,11 @@ function BusinessView({ onEditRequest, onPrefillEstimate, userRole }) {
   }
 
   async function markComplete(item, paidNow) {
+    if (!item.hasBeforePhoto) {
+      setCompletionToast("Can't complete this job — the required before-service photo is missing.");
+      setTimeout(() => setCompletionToast(""), 5000);
+      return;
+    }
     const timerRunningHere = activeTimer && activeTimer.jobTimestamp === item.timestamp;
     let loggedMinutes = null;
 
@@ -2289,6 +2331,23 @@ function BusinessView({ onEditRequest, onPrefillEstimate, userRole }) {
                       </a>
                     )}
                   </div>
+                  <div className="mt-1.5" onClick={(e) => e.stopPropagation()}>
+                    {userRole === "owner" ? (
+                      <select value={t.booking.assignedTo || ""} onChange={(e) => assignJob(t.booking, e.target.value)}
+                        className="text-xs border border-gray-300 rounded-full px-2 py-0.5 text-gray-600">
+                        <option value="">Unassigned</option>
+                        {crewRoster.map((p) => (
+                          <option key={p.username} value={p.username}>{p.name || p.username}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      t.booking.assignedTo && (
+                        <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: "var(--surface-alt)", color: "var(--text-muted)" }}>
+                          Assigned: {(crewRoster.find((p) => p.username === t.booking.assignedTo) || {}).name || t.booking.assignedTo}
+                        </span>
+                      )
+                    )}
+                  </div>
                   </div>
                 </div>
               ))}
@@ -2457,9 +2516,9 @@ function BusinessView({ onEditRequest, onPrefillEstimate, userRole }) {
                     </div>
                     <div className="flex items-center gap-2 mt-2 flex-wrap">
                       {!timerRunningHere && (
-                        <button onClick={(e) => { e.stopPropagation(); startTimer(item); }} disabled={!!timerRunningElsewhere}
-                          className="text-xs rounded-full px-3 py-1 border" style={{ borderColor: "var(--accent)", color: "var(--accent)", opacity: timerRunningElsewhere ? 0.4 : 1 }}>
-                          Start timer
+                        <button onClick={(e) => { e.stopPropagation(); startTimer(item); }} disabled={!!timerRunningElsewhere || !item.hasBeforePhoto}
+                          className="text-xs rounded-full px-3 py-1 border" style={{ borderColor: item.hasBeforePhoto ? "var(--accent)" : "var(--warn)", color: item.hasBeforePhoto ? "var(--accent)" : "var(--warn)", opacity: timerRunningElsewhere ? 0.4 : 1 }}>
+                          {item.hasBeforePhoto ? "Start timer" : "Before photo required"}
                         </button>
                       )}
                       <button onClick={(e) => { e.stopPropagation(); markComplete(item); }} disabled={!timerRunningHere}
@@ -2477,7 +2536,9 @@ function BusinessView({ onEditRequest, onPrefillEstimate, userRole }) {
                       )}
                     </div>
                     {!timerRunningHere && !timerRunningElsewhere && (
-                      <p className="text-xs text-gray-400 mt-1">Start the timer before marking this job complete.</p>
+                      <p className="text-xs mt-1" style={{ color: item.hasBeforePhoto ? "var(--text-faint)" : "var(--warn)" }}>
+                        {item.hasBeforePhoto ? "Start the timer before marking this job complete." : "Required: open this job and take a before-service photo. Work cannot begin until the property condition is documented."}
+                      </p>
                     )}
                   </div>
                 );
@@ -2818,6 +2879,10 @@ function BusinessView({ onEditRequest, onPrefillEstimate, userRole }) {
               </div>
             </div>
 
+            {pendingDetailItem.status === "completed" && pendingDetailItem.completedBy && (
+              <p className="text-xs text-gray-400 mb-3">Completed by {pendingDetailItem.completedBy}</p>
+            )}
+
             {pendingDetailItem.status === "completed" && userRole === "owner" && (
               <div className="border rounded-lg p-2.5 mb-3 text-xs flex items-center justify-between"
                 style={pendingDetailItem.paymentStatus === "paid"
@@ -2836,22 +2901,29 @@ function BusinessView({ onEditRequest, onPrefillEstimate, userRole }) {
             {(pendingDetailItem.status === "confirmed" || pendingDetailItem.status === "completed") && (
               <div className="border border-gray-200 rounded-lg p-3 mb-3 space-y-2.5">
                 <div>
-                  <p className="text-xs font-medium text-gray-700 mb-1.5">Before photo</p>
+                  <div className="mb-2">
+                    <p className="text-xs font-semibold text-gray-900">Before-service photo <span style={{ color: "var(--warn)" }}>• REQUIRED</span></p>
+                    <p className="text-xs text-gray-500 mt-1">Taken before work begins to document the property's condition and help protect both the customer and the crew. This step cannot be skipped.</p>
+                  </div>
                   {pendingDetailItem.hasBeforePhoto ? (
-                    <div className="flex gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <button onClick={() => viewPhoto(pendingDetailItem, "before")}
-                        className="text-xs rounded-full px-3 py-1.5 border" style={{ borderColor: "var(--accent)", color: "var(--accent)" }}>
-                        View photo
+                        className="text-xs rounded-full px-3 py-1.5 border" style={{ borderColor: "var(--success)", color: "var(--success)" }}>
+                        ✓ View required photo
                       </button>
-                      <label className="text-xs rounded-full px-3 py-1.5 border border-gray-300 text-gray-600 cursor-pointer">
-                        {photoUploading === `before:${pendingDetailItem.timestamp}` ? "Saving…" : "Replace"}
-                        <input type="file" accept="image/*" capture="environment" className="hidden"
-                          onChange={(e) => handlePhotoUpload(pendingDetailItem, e.target.files && e.target.files[0], "before")} />
-                      </label>
+                      {userRole === "owner" ? (
+                        <label className="text-xs rounded-full px-3 py-1.5 border border-gray-300 text-gray-600 cursor-pointer">
+                          {photoUploading === `before:${pendingDetailItem.timestamp}` ? "Saving…" : "Replace"}
+                          <input type="file" accept="image/*" capture="environment" className="hidden"
+                            onChange={(e) => handlePhotoUpload(pendingDetailItem, e.target.files && e.target.files[0], "before")} />
+                        </label>
+                      ) : (
+                        <span className="text-xs text-gray-400">Captured for this service record</span>
+                      )}
                     </div>
                   ) : (
                     <label className="inline-block text-xs rounded-full px-3 py-1.5 border cursor-pointer" style={{ borderColor: "var(--accent)", color: "var(--accent)" }}>
-                      {photoUploading === `before:${pendingDetailItem.timestamp}` ? "Saving…" : "+ Add before photo"}
+                      {photoUploading === `before:${pendingDetailItem.timestamp}` ? "Saving…" : "Take required before photo"}
                       <input type="file" accept="image/*" capture="environment" className="hidden"
                         onChange={(e) => handlePhotoUpload(pendingDetailItem, e.target.files && e.target.files[0], "before")} />
                     </label>
@@ -2903,9 +2975,9 @@ function BusinessView({ onEditRequest, onPrefillEstimate, userRole }) {
                   return (
                     <>
                       {!timerRunningHere && (
-                        <button onClick={() => startTimer(pendingDetailItem)} disabled={!!timerRunningElsewhere}
-                          className="text-xs rounded-full px-3 py-1.5 border" style={{ borderColor: "var(--accent)", color: "var(--accent)", opacity: timerRunningElsewhere ? 0.4 : 1 }}>
-                          Start timer
+                        <button onClick={() => startTimer(pendingDetailItem)} disabled={!!timerRunningElsewhere || !pendingDetailItem.hasBeforePhoto}
+                          className="text-xs rounded-full px-3 py-1.5 border" style={{ borderColor: pendingDetailItem.hasBeforePhoto ? "var(--accent)" : "var(--warn)", color: pendingDetailItem.hasBeforePhoto ? "var(--accent)" : "var(--warn)", opacity: timerRunningElsewhere ? 0.4 : 1 }}>
+                          {pendingDetailItem.hasBeforePhoto ? "Start timer" : "Before photo required"}
                         </button>
                       )}
                       {timerRunningHere && userRole === "owner" && (
@@ -5956,120 +6028,282 @@ function TeamView({ authToken, currentUsername }) {
   );
 }
 
-function DashboardView({ userRole, userName, onNewCustomer, onJobs, onCustomers, onBooks }) {
+const SCHEDULE_DAYS = [
+  { key: "mon", label: "Mon" }, { key: "tue", label: "Tue" }, { key: "wed", label: "Wed" },
+  { key: "thu", label: "Thu" }, { key: "fri", label: "Fri" }, { key: "sat", label: "Sat" }, { key: "sun", label: "Sun" },
+];
+
+function CrewScheduleView({ userRole }) {
+  const [schedules, setSchedules] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [jobs, setJobs] = useState([]);
-  const [bookings, setBookings] = useState([]);
-  const [profiles, setProfiles] = useState([]);
+  const [editingUsername, setEditingUsername] = useState(null);
+  const [draft, setDraft] = useState({});
+  const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      try {
-        const [estTable, bookingItems, profileTable] = await Promise.all([
-          loadTable(TABLE_KEYS.estimates),
-          fetchBookings(),
-          loadTable(TABLE_KEYS.profiles),
-        ]);
-        if (!alive) return;
-        setJobs(Object.values(estTable));
-        setBookings(bookingItems);
-        setProfiles(Object.values(profileTable));
-      } catch (e) {}
-      if (alive) setLoading(false);
-    })();
-    return () => { alive = false; };
-  }, []);
+  async function loadSchedules() {
+    setLoading(true);
+    const table = await loadTable(TABLE_KEYS.crewSchedules, false);
+    setSchedules(Object.values(table));
+    setLoading(false);
+  }
 
-  const now = new Date();
-  const todayISO = now.toISOString().slice(0, 10);
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
-  const todays = bookings.filter((b) => b.dateISO === todayISO).sort((a,b) => a.startMs - b.startMs);
-  const completed = jobs.filter((j) => j.status === "completed");
-  const monthRevenue = completed.filter((j) => j.timestamp >= monthStart).reduce((sum,j) => sum + (Number(j.total) || 0), 0);
-  const unpaid = completed.filter((j) => j.paymentStatus !== "paid");
-  const pending = jobs.filter((j) => j.status !== "completed" && j.status !== "confirmed" && j.status !== "declined");
-  const firstName = (userName || "there").trim().split(/\s+/)[0];
+  useEffect(() => { loadSchedules(); }, []);
+
+  function startEdit(person) {
+    setEditingUsername(person.username);
+    const base = {};
+    SCHEDULE_DAYS.forEach((d) => {
+      base[d.key] = person.schedule[d.key] || { working: false, start: "08:00", end: "16:00" };
+    });
+    setDraft(base);
+  }
+
+  function toggleDay(dayKey) {
+    setDraft((prev) => ({ ...prev, [dayKey]: { ...prev[dayKey], working: !prev[dayKey].working } }));
+  }
+
+  function setDayTime(dayKey, field, value) {
+    setDraft((prev) => ({ ...prev, [dayKey]: { ...prev[dayKey], [field]: value } }));
+  }
+
+  async function saveSchedule() {
+    setSaving(true);
+    try {
+      await fetch(`${API_BASE}/api/crew-schedules/${encodeURIComponent(editingUsername)}`, {
+        method: "POST",
+        headers: authHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ schedule: draft }),
+      });
+      setEditingUsername(null);
+      await loadSchedules();
+    } catch (e) {}
+    setSaving(false);
+  }
+
+  function workingDaysSummary(schedule) {
+    const working = SCHEDULE_DAYS.filter((d) => schedule[d.key] && schedule[d.key].working);
+    if (working.length === 0) return "No days set";
+    return working.map((d) => d.label).join(", ");
+  }
 
   return (
-    <div style={{ paddingBottom: 28 + BOTTOM_TAB_HEIGHT }}>
+    <div className="pb-8">
       <div className="px-4 pt-5 pb-4 border-b border-gray-200 flex items-center gap-3">
         <Badge />
-        <div className="flex-1">
+        <div>
           <p className="text-base font-medium text-gray-900">R-DUB's Lawn Care</p>
-          <p className="text-sm" style={{ color: "var(--accent)" }}>Dashboard</p>
+          <p className="text-sm" style={{ color: "var(--accent)" }}>Crew Schedule</p>
         </div>
       </div>
 
-      <div className="px-4 py-5 space-y-6">
-        <section>
-          <p className="text-xs uppercase tracking-wide text-gray-400">Welcome back</p>
-          <h1 className="text-2xl font-semibold text-gray-900 mt-1">Good {now.getHours() < 12 ? "morning" : now.getHours() < 17 ? "afternoon" : "evening"}, {firstName}.</h1>
-          <p className="text-sm text-gray-500 mt-1">Here's what R-DUB'S has lined up today.</p>
-        </section>
-
-        <section className="grid grid-cols-2 gap-3">
-          <button onClick={onJobs} className="text-left border border-gray-200 rounded-xl p-4 bg-white">
-            <div className="flex items-center justify-between"><span className="text-xs text-gray-500">Today's jobs</span><CalendarDays size={17} style={{ color: "var(--accent)" }} /></div>
-            <p className="text-3xl font-semibold text-gray-900 mt-2">{loading ? "—" : todays.length}</p>
-          </button>
-          <div className="border border-gray-200 rounded-xl p-4 bg-white">
-            <div className="flex items-center justify-between"><span className="text-xs text-gray-500">This month</span><DollarSign size={17} style={{ color: "var(--success)" }} /></div>
-            <p className="text-2xl font-semibold text-gray-900 mt-2">{loading ? "—" : `$${monthRevenue.toLocaleString()}`}</p>
-          </div>
-          <button onClick={onCustomers} className="text-left border border-gray-200 rounded-xl p-4 bg-white">
-            <div className="flex items-center justify-between"><span className="text-xs text-gray-500">Customers</span><Users size={17} style={{ color: "var(--accent)" }} /></div>
-            <p className="text-3xl font-semibold text-gray-900 mt-2">{loading ? "—" : profiles.length}</p>
-          </button>
-          <button onClick={onJobs} className="text-left border border-gray-200 rounded-xl p-4 bg-white">
-            <div className="flex items-center justify-between"><span className="text-xs text-gray-500">Needs attention</span><ClipboardList size={17} style={{ color: "var(--warn)" }} /></div>
-            <p className="text-3xl font-semibold text-gray-900 mt-2">{loading ? "—" : pending.length + unpaid.length}</p>
-          </button>
-        </section>
-
-        <section>
-          <div className="flex items-center justify-between mb-2">
-            <h2 className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--accent)" }}>Today</h2>
-            <button onClick={onJobs} className="text-xs underline" style={{ color: "var(--accent)" }}>View all jobs</button>
-          </div>
-          {loading ? <p className="text-sm text-gray-400">Loading today's route…</p> : todays.length === 0 ? (
-            <div className="border border-gray-200 rounded-xl p-4"><p className="text-sm text-gray-600">No jobs scheduled today.</p><p className="text-xs text-gray-400 mt-1">Your route is clear.</p></div>
-          ) : (
-            <div className="space-y-2">
-              {todays.slice(0,4).map((b) => (
-                <button key={b.key || b.id} onClick={onJobs} className="w-full text-left border border-gray-200 rounded-xl p-3 flex items-center gap-3">
-                  <div className="w-1 self-stretch rounded-full" style={{ backgroundColor: "var(--accent)" }} />
-                  <div className="flex-1 min-w-0"><p className="text-sm font-medium text-gray-900 truncate">{b.customerName || "Customer"}</p><p className="text-xs text-gray-500">{b.slotLabel || formatSlotDate(b.dateISO)}</p></div>
-                  <span className="text-xs font-medium" style={{ color: "var(--accent)" }}>Open →</span>
-                </button>
-              ))}
+      <div className="px-4 py-4 space-y-3">
+        {loading ? (
+          <p className="text-xs text-gray-400">Loading…</p>
+        ) : (
+          schedules.map((person) => (
+            <div key={person.username} className="border border-gray-200 rounded-lg p-3 text-xs">
+              {editingUsername === person.username ? (
+                <div>
+                  <p className="font-medium text-gray-800 mb-2">{person.name || person.username}</p>
+                  <div className="space-y-1.5">
+                    {SCHEDULE_DAYS.map((d) => (
+                      <div key={d.key} className="flex items-center gap-2">
+                        <label className="flex items-center gap-1.5 w-14 shrink-0">
+                          <input type="checkbox" checked={draft[d.key].working} onChange={() => toggleDay(d.key)}
+                            style={{ accentColor: "var(--accent)", touchAction: "pan-y" }} />
+                          {d.label}
+                        </label>
+                        {draft[d.key].working && (
+                          <>
+                            <input type="time" value={draft[d.key].start} onChange={(e) => setDayTime(d.key, "start", e.target.value)}
+                              className="border border-gray-300 rounded px-1.5 py-1 text-xs flex-1" />
+                            <span className="text-gray-400">–</span>
+                            <input type="time" value={draft[d.key].end} onChange={(e) => setDayTime(d.key, "end", e.target.value)}
+                              className="border border-gray-300 rounded px-1.5 py-1 text-xs flex-1" />
+                          </>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex gap-2 mt-3">
+                    <button onClick={() => setEditingUsername(null)} className="flex-1 border border-gray-300 rounded-lg py-1.5 text-gray-700">Cancel</button>
+                    <button onClick={saveSchedule} disabled={saving} className="flex-1 rounded-lg py-1.5 text-white" style={{ backgroundColor: ACCENT_HEX, opacity: saving ? 0.7 : 1 }}>
+                      {saving ? "Saving…" : "Save"}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-medium text-gray-800">{person.name || person.username}<span className="ml-1.5 text-gray-400 font-normal">· {person.role === "owner" ? "Owner" : "Crew"}</span></p>
+                    <p className="text-gray-400 mt-0.5">{workingDaysSummary(person.schedule)}</p>
+                  </div>
+                  {userRole === "owner" && (
+                    <button onClick={() => startEdit(person)} className="text-gray-400"><Pencil size={14} /></button>
+                  )}
+                </div>
+              )}
             </div>
-          )}
-        </section>
-
-        <section>
-          <h2 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--accent)" }}>Quick actions</h2>
-          <div className="grid grid-cols-2 gap-2">
-            <button onClick={onNewCustomer} className="rounded-xl px-3 py-3 text-sm font-medium text-white" style={{ backgroundColor: ACCENT_HEX }}>+ New customer</button>
-            <button onClick={onCustomers} className="rounded-xl px-3 py-3 text-sm font-medium border border-gray-200 text-gray-700">Customer directory</button>
-            <button onClick={onJobs} className="rounded-xl px-3 py-3 text-sm font-medium border border-gray-200 text-gray-700">Jobs & schedule</button>
-            {userRole === "owner" && <button onClick={onBooks} className="rounded-xl px-3 py-3 text-sm font-medium border border-gray-200 text-gray-700">Books</button>}
-          </div>
-        </section>
-
-        {!loading && unpaid.length > 0 && (
-          <button onClick={onJobs} className="w-full text-left rounded-xl p-4" style={{ backgroundColor: "var(--surface-alt)", border: "1px solid var(--border)" }}>
-            <p className="text-sm font-medium text-gray-900">{unpaid.length} unpaid job{unpaid.length === 1 ? "" : "s"}</p>
-            <p className="text-xs mt-1" style={{ color: "var(--warn)" }}>Tap to review completed work and payments.</p>
-          </button>
+          ))
         )}
       </div>
     </div>
   );
 }
 
+function WebsiteSettingsView() {
+  const [content, setContent] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [savingSection, setSavingSection] = useState(null);
+  const [savedSection, setSavedSection] = useState(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/site-content`);
+        const data = await res.json();
+        setContent(data.content || {});
+      } catch (e) {
+        setContent({});
+      }
+      setLoading(false);
+    })();
+  }, []);
+
+  function updateField(key, value) {
+    setContent((prev) => ({ ...prev, [key]: value }));
+  }
+
+  async function saveSection(sectionId, keys) {
+    setSavingSection(sectionId);
+    const patch = {};
+    keys.forEach((k) => { patch[k] = content[k]; });
+    try {
+      await fetch(`${API_BASE}/api/site-content`, {
+        method: "POST",
+        headers: authHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ content: patch }),
+      });
+      setSavedSection(sectionId);
+      setTimeout(() => setSavedSection(null), 2500);
+    } catch (e) {}
+    setSavingSection(null);
+  }
+
+  function SaveButton({ sectionId, keys }) {
+    return (
+      <button onClick={() => saveSection(sectionId, keys)} disabled={savingSection === sectionId}
+        className="rounded-lg px-4 py-1.5 text-xs font-medium text-white mt-2"
+        style={{ backgroundColor: ACCENT_HEX, opacity: savingSection === sectionId ? 0.7 : 1 }}>
+        {savingSection === sectionId ? "Saving…" : savedSection === sectionId ? "Saved ✓" : "Save"}
+      </button>
+    );
+  }
+
+  if (loading || !content) {
+    return (
+      <div className="pb-8 px-4 pt-5">
+        <p className="text-xs text-gray-400">Loading…</p>
+      </div>
+    );
+  }
+
+  const PRICE_FIELDS = [
+    { key: "priceSmallRecurring", label: "Small lot • recurring" },
+    { key: "priceMediumRecurring", label: "Medium lot • recurring" },
+    { key: "priceLargeRecurring", label: "Large lot • recurring" },
+    { key: "priceLeafBlowout", label: "Fall leaf blow-out" },
+    { key: "priceSpringCleanup", label: "Spring cleanup" },
+    { key: "priceMulchRefresh", label: "Mulch refresh" },
+    { key: "priceBedEdging", label: "Bed edging & shaping" },
+    { key: "priceShrubTrim", label: "Shrub / hedge trim" },
+  ];
+
+  const FAQ_FIELDS = [
+    { key: "faq1Answer", q: "Do I need to be home for service?" },
+    { key: "faq2Answer", q: "What happens if it rains?" },
+    { key: "faq3Answer", q: "How does recurring mowing work?" },
+    { key: "faq4Answer", q: "Can I change or skip a visit?" },
+    { key: "faq5Answer", q: "How do I get my customer history?" },
+  ];
+
+  return (
+    <div className="pb-8">
+      <div className="px-4 pt-5 pb-4 border-b border-gray-200 flex items-center gap-3">
+        <Badge />
+        <div>
+          <p className="text-base font-medium text-gray-900">R-DUB's Lawn Care</p>
+          <p className="text-sm" style={{ color: "var(--accent)" }}>Website Settings</p>
+        </div>
+      </div>
+
+      <div className="px-4 py-4 space-y-6">
+        <section>
+          <h2 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--accent)" }}>Launch Mode</h2>
+          <p className="text-xs text-gray-500 mb-2">Preview mode shows the "2027 Launch Preview" badge and interest-list wording. Live mode removes all of that and shows real "Request a Quote" wording site-wide.</p>
+          <div className="flex gap-2">
+            <button onClick={() => updateField("launchMode", "preview")}
+              className="flex-1 rounded-lg py-2 text-xs font-medium border"
+              style={content.launchMode !== "live" ? { borderColor: "var(--accent)", backgroundColor: "var(--surface-alt)", color: "var(--accent)" } : { borderColor: "#D1D5DB", color: "#6B7280" }}>
+              Preview
+            </button>
+            <button onClick={() => updateField("launchMode", "live")}
+              className="flex-1 rounded-lg py-2 text-xs font-medium border"
+              style={content.launchMode === "live" ? { borderColor: "var(--success)", backgroundColor: "#ECFDF5", color: "var(--success)" } : { borderColor: "#D1D5DB", color: "#6B7280" }}>
+              Live
+            </button>
+          </div>
+          <SaveButton sectionId="launch" keys={["launchMode"]} />
+        </section>
+
+        <section>
+          <h2 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--accent)" }}>Headline</h2>
+          <label className="block text-xs text-gray-500 mb-1">Line 1</label>
+          <input type="text" value={content.heroLine1 || ""} onChange={(e) => updateField("heroLine1", e.target.value)}
+            className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm mb-2" />
+          <label className="block text-xs text-gray-500 mb-1">Line 2 (shown in purple)</label>
+          <input type="text" value={content.heroLine2 || ""} onChange={(e) => updateField("heroLine2", e.target.value)}
+            className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm mb-2" />
+          <label className="block text-xs text-gray-500 mb-1">Subheading</label>
+          <textarea value={content.heroLead || ""} onChange={(e) => updateField("heroLead", e.target.value)} rows={2}
+            className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm" />
+          <SaveButton sectionId="headline" keys={["heroLine1", "heroLine2", "heroLead"]} />
+        </section>
+
+        <section>
+          <h2 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--accent)" }}>Pricing</h2>
+          <div className="space-y-2">
+            {PRICE_FIELDS.map((f) => (
+              <div key={f.key} className="flex items-center gap-2">
+                <span className="text-xs text-gray-500 flex-1">{f.label}</span>
+                <input type="text" value={content[f.key] || ""} onChange={(e) => updateField(f.key, e.target.value)}
+                  className="w-28 border border-gray-300 rounded-md px-2 py-1 text-sm text-right" />
+              </div>
+            ))}
+          </div>
+          <SaveButton sectionId="pricing" keys={PRICE_FIELDS.map((f) => f.key)} />
+        </section>
+
+        <section>
+          <h2 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--accent)" }}>FAQ Answers</h2>
+          <div className="space-y-3">
+            {FAQ_FIELDS.map((f) => (
+              <div key={f.key}>
+                <label className="block text-xs font-medium text-gray-700 mb-1">{f.q}</label>
+                <textarea value={content[f.key] || ""} onChange={(e) => updateField(f.key, e.target.value)} rows={2}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm" />
+              </div>
+            ))}
+          </div>
+          <SaveButton sectionId="faq" keys={FAQ_FIELDS.map((f) => f.key)} />
+        </section>
+      </div>
+    </div>
+  );
+}
+
 function App() {
-  const [mode, setMode] = useState("home");
+  const [mode, setMode] = useState("business");
   const [editRequest, setEditRequest] = useState(null);
   const [prefillEstimate, setPrefillEstimate] = useState(null);
   const [customerDrawerOpen, setCustomerDrawerOpen] = useState(false);
@@ -6077,10 +6311,12 @@ function App() {
   const [pricesDrawerOpen, setPricesDrawerOpen] = useState(false);
   const [bugsDrawerOpen, setBugsDrawerOpen] = useState(false);
   const [teamDrawerOpen, setTeamDrawerOpen] = useState(false);
+  const [scheduleDrawerOpen, setScheduleDrawerOpen] = useState(false);
+  const [websiteDrawerOpen, setWebsiteDrawerOpen] = useState(false);
   const [returnToDirectoryPhone, setReturnToDirectoryPhone] = useState(null);
   const [directoryReopenPhone, setDirectoryReopenPhone] = useState(null);
-  const [bottomTabOrder, setBottomTabOrder] = useState(["home", "newcustomer", "business"]);
-  const [utilityOrder, setUtilityOrder] = useState(["prices", "directory", "books", "bugs", "team", "darkmode", "logout"]);
+  const [bottomTabOrder, setBottomTabOrder] = useState(["newcustomer", "business"]);
+  const [utilityOrder, setUtilityOrder] = useState(["prices", "directory", "books", "bugs", "team", "schedule", "website", "darkmode", "logout"]);
   const [layoutEditMode, setLayoutEditMode] = useState(false);
   const [authToken, setAuthToken] = useState(null);
   const [authUser, setAuthUser] = useState(null);
@@ -6107,8 +6343,8 @@ function App() {
         const r = await localStore.get("settings:nav-layout", false);
         if (r && r.value) {
           const parsed = JSON.parse(r.value);
-          if (Array.isArray(parsed.bottomOrder) && parsed.bottomOrder.length === 3) setBottomTabOrder(parsed.bottomOrder);
-          if (Array.isArray(parsed.utilityOrder) && parsed.utilityOrder.length === 7) setUtilityOrder(parsed.utilityOrder);
+          if (Array.isArray(parsed.bottomOrder) && parsed.bottomOrder.length === 2) setBottomTabOrder(parsed.bottomOrder);
+          if (Array.isArray(parsed.utilityOrder) && parsed.utilityOrder.length === 9) setUtilityOrder(parsed.utilityOrder);
         }
       } catch (e) {}
     })();
@@ -6190,7 +6426,7 @@ function App() {
   }
 
   function swapBottomTabs() {
-    const next = [bottomTabOrder[2], bottomTabOrder[0], bottomTabOrder[1]];
+    const next = [bottomTabOrder[1], bottomTabOrder[0]];
     setBottomTabOrder(next);
     saveNavLayout(next, utilityOrder);
   }
@@ -6218,14 +6454,11 @@ function App() {
     setPricesDrawerOpen(false);
     setBugsDrawerOpen(false);
     setTeamDrawerOpen(false);
+    setScheduleDrawerOpen(false);
+    setWebsiteDrawerOpen(false);
   }
 
   const BOTTOM_TAB_DEFS = {
-    home: {
-      label: "Home", icon: Home,
-      onClick: () => { setMode("home"); closeAllDrawers(); },
-      active: mode === "home",
-    },
     newcustomer: {
       label: "New Customer", icon: UserPlus,
       onClick: () => { setMode("newcustomer"); closeAllDrawers(); },
@@ -6241,29 +6474,40 @@ function App() {
   const UTILITY_DEFS = {
     prices: {
       label: "Price Sheet", icon: Tag,
-      onClick: () => { setPricesDrawerOpen((v) => !v); setCustomerDrawerOpen(false); setBooksDrawerOpen(false); setBugsDrawerOpen(false); setTeamDrawerOpen(false); },
+      onClick: () => { setPricesDrawerOpen((v) => !v); setCustomerDrawerOpen(false); setBooksDrawerOpen(false); setBugsDrawerOpen(false); setTeamDrawerOpen(false); setScheduleDrawerOpen(false); setWebsiteDrawerOpen(false); },
       active: pricesDrawerOpen,
     },
     directory: {
       label: "Customer Directory", icon: Users,
-      onClick: () => { setCustomerDrawerOpen((v) => !v); setBooksDrawerOpen(false); setPricesDrawerOpen(false); setBugsDrawerOpen(false); setTeamDrawerOpen(false); },
+      onClick: () => { setCustomerDrawerOpen((v) => !v); setBooksDrawerOpen(false); setPricesDrawerOpen(false); setBugsDrawerOpen(false); setTeamDrawerOpen(false); setScheduleDrawerOpen(false); setWebsiteDrawerOpen(false); },
       active: customerDrawerOpen,
     },
     books: {
       label: "Books", icon: BookOpen,
-      onClick: () => { setBooksDrawerOpen((v) => !v); setCustomerDrawerOpen(false); setPricesDrawerOpen(false); setBugsDrawerOpen(false); setTeamDrawerOpen(false); },
+      onClick: () => { setBooksDrawerOpen((v) => !v); setCustomerDrawerOpen(false); setPricesDrawerOpen(false); setBugsDrawerOpen(false); setTeamDrawerOpen(false); setScheduleDrawerOpen(false); setWebsiteDrawerOpen(false); },
       active: booksDrawerOpen,
       hidden: authUser && authUser.role !== "owner",
     },
     bugs: {
       label: "Report a Bug", icon: Bug,
-      onClick: () => { setBugsDrawerOpen((v) => !v); setCustomerDrawerOpen(false); setPricesDrawerOpen(false); setBooksDrawerOpen(false); setTeamDrawerOpen(false); },
+      onClick: () => { setBugsDrawerOpen((v) => !v); setCustomerDrawerOpen(false); setPricesDrawerOpen(false); setBooksDrawerOpen(false); setTeamDrawerOpen(false); setScheduleDrawerOpen(false); setWebsiteDrawerOpen(false); },
       active: bugsDrawerOpen,
     },
     team: {
       label: "Team Logins", icon: KeyRound,
-      onClick: () => { setTeamDrawerOpen((v) => !v); setCustomerDrawerOpen(false); setPricesDrawerOpen(false); setBooksDrawerOpen(false); setBugsDrawerOpen(false); },
+      onClick: () => { setTeamDrawerOpen((v) => !v); setCustomerDrawerOpen(false); setPricesDrawerOpen(false); setBooksDrawerOpen(false); setBugsDrawerOpen(false); setScheduleDrawerOpen(false); setWebsiteDrawerOpen(false); },
       active: teamDrawerOpen,
+      hidden: authUser && authUser.role !== "owner",
+    },
+    schedule: {
+      label: "Crew Schedule", icon: Calendar,
+      onClick: () => { setScheduleDrawerOpen((v) => !v); setCustomerDrawerOpen(false); setPricesDrawerOpen(false); setBooksDrawerOpen(false); setBugsDrawerOpen(false); setTeamDrawerOpen(false); setWebsiteDrawerOpen(false); },
+      active: scheduleDrawerOpen,
+    },
+    website: {
+      label: "Website Settings", icon: Globe,
+      onClick: () => { setWebsiteDrawerOpen((v) => !v); setCustomerDrawerOpen(false); setPricesDrawerOpen(false); setBooksDrawerOpen(false); setBugsDrawerOpen(false); setTeamDrawerOpen(false); setScheduleDrawerOpen(false); },
+      active: websiteDrawerOpen,
       hidden: authUser && authUser.role !== "owner",
     },
     darkmode: {
@@ -6347,16 +6591,6 @@ function App() {
             <Settings2 size={15} />
           </button>
         </div>
-        {mode === "home" && (
-          <DashboardView
-            userRole={authUser ? authUser.role : "owner"}
-            userName={authUser ? (authUser.name || authUser.username) : ""}
-            onNewCustomer={() => { setMode("newcustomer"); closeAllDrawers(); }}
-            onJobs={() => { setMode("business"); closeAllDrawers(); }}
-            onCustomers={() => { setCustomerDrawerOpen(true); setBooksDrawerOpen(false); setPricesDrawerOpen(false); setBugsDrawerOpen(false); setTeamDrawerOpen(false); }}
-            onBooks={() => { setBooksDrawerOpen(true); setCustomerDrawerOpen(false); setPricesDrawerOpen(false); setBugsDrawerOpen(false); setTeamDrawerOpen(false); }}
-          />
-        )}
         {mode === "newcustomer" && (
           <NewCustomerView editRequest={editRequest} onConsumeEditRequest={() => setEditRequest(null)}
             prefillEstimate={prefillEstimate} onConsumePrefillEstimate={() => setPrefillEstimate(null)}
@@ -6440,6 +6674,36 @@ function App() {
           </div>
         )}
 
+        {scheduleDrawerOpen && (
+          <div className="fixed inset-0 z-20" style={{ top: "45px", bottom: BOTTOM_TAB_HEIGHT }}>
+            <div className="absolute inset-0 bg-black/30" onClick={() => setScheduleDrawerOpen(false)} />
+            <div className="absolute inset-0 bg-white overflow-y-auto max-w-md mx-auto">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 sticky top-0 bg-white z-10">
+                <p className="text-sm font-medium text-gray-900">Crew Schedule</p>
+                <button onClick={() => setScheduleDrawerOpen(false)} aria-label="Close" className="text-gray-400">
+                  <X size={18} />
+                </button>
+              </div>
+              <CrewScheduleView userRole={authUser ? authUser.role : "owner"} />
+            </div>
+          </div>
+        )}
+
+        {websiteDrawerOpen && (
+          <div className="fixed inset-0 z-20" style={{ top: "45px", bottom: BOTTOM_TAB_HEIGHT }}>
+            <div className="absolute inset-0 bg-black/30" onClick={() => setWebsiteDrawerOpen(false)} />
+            <div className="absolute inset-0 bg-white overflow-y-auto max-w-md mx-auto">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 sticky top-0 bg-white z-10">
+                <p className="text-sm font-medium text-gray-900">Website Settings</p>
+                <button onClick={() => setWebsiteDrawerOpen(false)} aria-label="Close" className="text-gray-400">
+                  <X size={18} />
+                </button>
+              </div>
+              <WebsiteSettingsView />
+            </div>
+          </div>
+        )}
+
         {pricesDrawerOpen && (
           <div className="fixed inset-0 z-20" style={{ top: "45px", bottom: BOTTOM_TAB_HEIGHT }}>
             <div className="absolute inset-0 bg-black/30" onClick={() => setPricesDrawerOpen(false)} />
@@ -6456,16 +6720,28 @@ function App() {
         )}
 
         <div className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white border-t border-gray-200 flex z-30" style={{ height: BOTTOM_TAB_HEIGHT }}>
-          {bottomTabOrder.map((id) => {
+          {bottomTabOrder.map((id, i) => {
             const def = BOTTOM_TAB_DEFS[id];
             const Icon = def.icon;
             return (
-              <button key={id} onClick={layoutEditMode ? undefined : def.onClick}
-                className="flex-1 h-full flex flex-col items-center justify-center gap-0.5"
-                style={{ color: def.active ? "var(--accent)" : "var(--text-muted)" }}>
-                <Icon size={21} />
-                <span className="text-xs font-medium">{def.label}</span>
-              </button>
+              <div key={id} className="flex-1 flex items-center">
+                {layoutEditMode && i === 1 && (
+                  <button onClick={swapBottomTabs} aria-label="Swap order" className="text-gray-300 px-1">
+                    <ArrowLeft size={13} />
+                  </button>
+                )}
+                <button onClick={layoutEditMode ? undefined : def.onClick}
+                  className="flex-1 h-full flex flex-col items-center justify-center gap-0.5"
+                  style={{ color: def.active ? "var(--accent)" : "var(--text-muted)" }}>
+                  <Icon size={22} />
+                  <span className="text-xs font-medium">{def.label}</span>
+                </button>
+                {layoutEditMode && i === 0 && (
+                  <button onClick={swapBottomTabs} aria-label="Swap order" className="text-gray-300 px-1">
+                    <ArrowRight size={13} />
+                  </button>
+                )}
+              </div>
             );
           })}
         </div>

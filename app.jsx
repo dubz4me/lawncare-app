@@ -69,16 +69,6 @@ const KeyRound = makeIcon(<>
 </>);
 
 
-const Home = makeIcon(<>
-  <path d="M3 11.5 12 4l9 7.5" /><path d="M5 10.5V21h14V10.5" /><path d="M9 21v-6h6v6" />
-</>);
-const DollarSign = makeIcon(<>
-  <line x1="12" y1="1" x2="12" y2="23" /><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7H14.5a3.5 3.5 0 0 1 0 7H6" />
-</>);
-const CalendarDays = makeIcon(<>
-  <rect x="3" y="5" width="18" height="16" rx="2" /><line x1="16" y1="3" x2="16" y2="7" /><line x1="8" y1="3" x2="8" y2="7" /><line x1="3" y1="11" x2="21" y2="11" />
-</>);
-
 const ACCENT_HEX = "#4B2E70";
 const BOTTOM_TAB_HEIGHT = 64;
 const API_BASE = "https://api.rdubslawncare.com";
@@ -1593,6 +1583,14 @@ function BusinessView({ onEditRequest, onPrefillEstimate, userRole }) {
   }
 
   async function startTimer(job) {
+    // Accountability rule: every job must have a before-service photo on file
+    // before work can begin. This protects both the customer and the crew by
+    // documenting the property's pre-service condition.
+    if (!job.hasBeforePhoto) {
+      setCompletionToast("Before photo required — document the property before starting work.");
+      setTimeout(() => setCompletionToast(""), 5000);
+      return false;
+    }
     const t = {
       jobTimestamp: job.timestamp, customerName: job.customerName || "",
       address: job.address || "", startedAt: Date.now(),
@@ -1601,7 +1599,12 @@ function BusinessView({ onEditRequest, onPrefillEstimate, userRole }) {
       await localStore.set("active-timer", JSON.stringify(t), false);
       setActiveTimer(t);
       setNowTick(Date.now());
-    } catch (e) {}
+      return true;
+    } catch (e) {
+      setCompletionToast("Couldn't start the job timer — try again.");
+      setTimeout(() => setCompletionToast(""), 4000);
+      return false;
+    }
   }
 
   async function loadTimeLogs() {
@@ -1720,6 +1723,13 @@ function BusinessView({ onEditRequest, onPrefillEstimate, userRole }) {
   }
 
   async function deletePhoto(item, kind) {
+    // Before-service photos are accountability records and must not be silently
+    // removed from a visit after capture. After-service photos retain the
+    // existing delete behavior.
+    if (kind === "before") {
+      setPhotoError("Before-service photos are required accountability records and can't be deleted from the visit.");
+      return;
+    }
     const storageKey = kind === "before" ? `photo-before:${item.timestamp}` : `photo:${item.timestamp}`;
     const flagField = kind === "before" ? "hasBeforePhoto" : "hasPhoto";
     try {
@@ -1743,6 +1753,11 @@ function BusinessView({ onEditRequest, onPrefillEstimate, userRole }) {
   }
 
   async function markComplete(item, paidNow) {
+    if (!item.hasBeforePhoto) {
+      setCompletionToast("Can't complete this job — the required before-service photo is missing.");
+      setTimeout(() => setCompletionToast(""), 5000);
+      return;
+    }
     const timerRunningHere = activeTimer && activeTimer.jobTimestamp === item.timestamp;
     let loggedMinutes = null;
 
@@ -2457,9 +2472,9 @@ function BusinessView({ onEditRequest, onPrefillEstimate, userRole }) {
                     </div>
                     <div className="flex items-center gap-2 mt-2 flex-wrap">
                       {!timerRunningHere && (
-                        <button onClick={(e) => { e.stopPropagation(); startTimer(item); }} disabled={!!timerRunningElsewhere}
-                          className="text-xs rounded-full px-3 py-1 border" style={{ borderColor: "var(--accent)", color: "var(--accent)", opacity: timerRunningElsewhere ? 0.4 : 1 }}>
-                          Start timer
+                        <button onClick={(e) => { e.stopPropagation(); startTimer(item); }} disabled={!!timerRunningElsewhere || !item.hasBeforePhoto}
+                          className="text-xs rounded-full px-3 py-1 border" style={{ borderColor: item.hasBeforePhoto ? "var(--accent)" : "var(--warn)", color: item.hasBeforePhoto ? "var(--accent)" : "var(--warn)", opacity: timerRunningElsewhere ? 0.4 : 1 }}>
+                          {item.hasBeforePhoto ? "Start timer" : "Before photo required"}
                         </button>
                       )}
                       <button onClick={(e) => { e.stopPropagation(); markComplete(item); }} disabled={!timerRunningHere}
@@ -2477,7 +2492,9 @@ function BusinessView({ onEditRequest, onPrefillEstimate, userRole }) {
                       )}
                     </div>
                     {!timerRunningHere && !timerRunningElsewhere && (
-                      <p className="text-xs text-gray-400 mt-1">Start the timer before marking this job complete.</p>
+                      <p className="text-xs mt-1" style={{ color: item.hasBeforePhoto ? "var(--text-faint)" : "var(--warn)" }}>
+                        {item.hasBeforePhoto ? "Start the timer before marking this job complete." : "Required: open this job and take a before-service photo. Work cannot begin until the property condition is documented."}
+                      </p>
                     )}
                   </div>
                 );
@@ -2836,22 +2853,21 @@ function BusinessView({ onEditRequest, onPrefillEstimate, userRole }) {
             {(pendingDetailItem.status === "confirmed" || pendingDetailItem.status === "completed") && (
               <div className="border border-gray-200 rounded-lg p-3 mb-3 space-y-2.5">
                 <div>
-                  <p className="text-xs font-medium text-gray-700 mb-1.5">Before photo</p>
+                  <div className="mb-2">
+                    <p className="text-xs font-semibold text-gray-900">Before-service photo <span style={{ color: "var(--warn)" }}>• REQUIRED</span></p>
+                    <p className="text-xs text-gray-500 mt-1">Taken before work begins to document the property's condition and help protect both the customer and the crew. This step cannot be skipped.</p>
+                  </div>
                   {pendingDetailItem.hasBeforePhoto ? (
-                    <div className="flex gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <button onClick={() => viewPhoto(pendingDetailItem, "before")}
-                        className="text-xs rounded-full px-3 py-1.5 border" style={{ borderColor: "var(--accent)", color: "var(--accent)" }}>
-                        View photo
+                        className="text-xs rounded-full px-3 py-1.5 border" style={{ borderColor: "var(--success)", color: "var(--success)" }}>
+                        ✓ View required photo
                       </button>
-                      <label className="text-xs rounded-full px-3 py-1.5 border border-gray-300 text-gray-600 cursor-pointer">
-                        {photoUploading === `before:${pendingDetailItem.timestamp}` ? "Saving…" : "Replace"}
-                        <input type="file" accept="image/*" capture="environment" className="hidden"
-                          onChange={(e) => handlePhotoUpload(pendingDetailItem, e.target.files && e.target.files[0], "before")} />
-                      </label>
+                      <span className="text-xs text-gray-400">Captured for this service record</span>
                     </div>
                   ) : (
                     <label className="inline-block text-xs rounded-full px-3 py-1.5 border cursor-pointer" style={{ borderColor: "var(--accent)", color: "var(--accent)" }}>
-                      {photoUploading === `before:${pendingDetailItem.timestamp}` ? "Saving…" : "+ Add before photo"}
+                      {photoUploading === `before:${pendingDetailItem.timestamp}` ? "Saving…" : "Take required before photo"}
                       <input type="file" accept="image/*" capture="environment" className="hidden"
                         onChange={(e) => handlePhotoUpload(pendingDetailItem, e.target.files && e.target.files[0], "before")} />
                     </label>
@@ -2903,9 +2919,9 @@ function BusinessView({ onEditRequest, onPrefillEstimate, userRole }) {
                   return (
                     <>
                       {!timerRunningHere && (
-                        <button onClick={() => startTimer(pendingDetailItem)} disabled={!!timerRunningElsewhere}
-                          className="text-xs rounded-full px-3 py-1.5 border" style={{ borderColor: "var(--accent)", color: "var(--accent)", opacity: timerRunningElsewhere ? 0.4 : 1 }}>
-                          Start timer
+                        <button onClick={() => startTimer(pendingDetailItem)} disabled={!!timerRunningElsewhere || !pendingDetailItem.hasBeforePhoto}
+                          className="text-xs rounded-full px-3 py-1.5 border" style={{ borderColor: pendingDetailItem.hasBeforePhoto ? "var(--accent)" : "var(--warn)", color: pendingDetailItem.hasBeforePhoto ? "var(--accent)" : "var(--warn)", opacity: timerRunningElsewhere ? 0.4 : 1 }}>
+                          {pendingDetailItem.hasBeforePhoto ? "Start timer" : "Before photo required"}
                         </button>
                       )}
                       {timerRunningHere && userRole === "owner" && (
@@ -5956,120 +5972,8 @@ function TeamView({ authToken, currentUsername }) {
   );
 }
 
-function DashboardView({ userRole, userName, onNewCustomer, onJobs, onCustomers, onBooks }) {
-  const [loading, setLoading] = useState(true);
-  const [jobs, setJobs] = useState([]);
-  const [bookings, setBookings] = useState([]);
-  const [profiles, setProfiles] = useState([]);
-
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      try {
-        const [estTable, bookingItems, profileTable] = await Promise.all([
-          loadTable(TABLE_KEYS.estimates),
-          fetchBookings(),
-          loadTable(TABLE_KEYS.profiles),
-        ]);
-        if (!alive) return;
-        setJobs(Object.values(estTable));
-        setBookings(bookingItems);
-        setProfiles(Object.values(profileTable));
-      } catch (e) {}
-      if (alive) setLoading(false);
-    })();
-    return () => { alive = false; };
-  }, []);
-
-  const now = new Date();
-  const todayISO = now.toISOString().slice(0, 10);
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
-  const todays = bookings.filter((b) => b.dateISO === todayISO).sort((a,b) => a.startMs - b.startMs);
-  const completed = jobs.filter((j) => j.status === "completed");
-  const monthRevenue = completed.filter((j) => j.timestamp >= monthStart).reduce((sum,j) => sum + (Number(j.total) || 0), 0);
-  const unpaid = completed.filter((j) => j.paymentStatus !== "paid");
-  const pending = jobs.filter((j) => j.status !== "completed" && j.status !== "confirmed" && j.status !== "declined");
-  const firstName = (userName || "there").trim().split(/\s+/)[0];
-
-  return (
-    <div style={{ paddingBottom: 28 + BOTTOM_TAB_HEIGHT }}>
-      <div className="px-4 pt-5 pb-4 border-b border-gray-200 flex items-center gap-3">
-        <Badge />
-        <div className="flex-1">
-          <p className="text-base font-medium text-gray-900">R-DUB's Lawn Care</p>
-          <p className="text-sm" style={{ color: "var(--accent)" }}>Dashboard</p>
-        </div>
-      </div>
-
-      <div className="px-4 py-5 space-y-6">
-        <section>
-          <p className="text-xs uppercase tracking-wide text-gray-400">Welcome back</p>
-          <h1 className="text-2xl font-semibold text-gray-900 mt-1">Good {now.getHours() < 12 ? "morning" : now.getHours() < 17 ? "afternoon" : "evening"}, {firstName}.</h1>
-          <p className="text-sm text-gray-500 mt-1">Here's what R-DUB'S has lined up today.</p>
-        </section>
-
-        <section className="grid grid-cols-2 gap-3">
-          <button onClick={onJobs} className="text-left border border-gray-200 rounded-xl p-4 bg-white">
-            <div className="flex items-center justify-between"><span className="text-xs text-gray-500">Today's jobs</span><CalendarDays size={17} style={{ color: "var(--accent)" }} /></div>
-            <p className="text-3xl font-semibold text-gray-900 mt-2">{loading ? "—" : todays.length}</p>
-          </button>
-          <div className="border border-gray-200 rounded-xl p-4 bg-white">
-            <div className="flex items-center justify-between"><span className="text-xs text-gray-500">This month</span><DollarSign size={17} style={{ color: "var(--success)" }} /></div>
-            <p className="text-2xl font-semibold text-gray-900 mt-2">{loading ? "—" : `$${monthRevenue.toLocaleString()}`}</p>
-          </div>
-          <button onClick={onCustomers} className="text-left border border-gray-200 rounded-xl p-4 bg-white">
-            <div className="flex items-center justify-between"><span className="text-xs text-gray-500">Customers</span><Users size={17} style={{ color: "var(--accent)" }} /></div>
-            <p className="text-3xl font-semibold text-gray-900 mt-2">{loading ? "—" : profiles.length}</p>
-          </button>
-          <button onClick={onJobs} className="text-left border border-gray-200 rounded-xl p-4 bg-white">
-            <div className="flex items-center justify-between"><span className="text-xs text-gray-500">Needs attention</span><ClipboardList size={17} style={{ color: "var(--warn)" }} /></div>
-            <p className="text-3xl font-semibold text-gray-900 mt-2">{loading ? "—" : pending.length + unpaid.length}</p>
-          </button>
-        </section>
-
-        <section>
-          <div className="flex items-center justify-between mb-2">
-            <h2 className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--accent)" }}>Today</h2>
-            <button onClick={onJobs} className="text-xs underline" style={{ color: "var(--accent)" }}>View all jobs</button>
-          </div>
-          {loading ? <p className="text-sm text-gray-400">Loading today's route…</p> : todays.length === 0 ? (
-            <div className="border border-gray-200 rounded-xl p-4"><p className="text-sm text-gray-600">No jobs scheduled today.</p><p className="text-xs text-gray-400 mt-1">Your route is clear.</p></div>
-          ) : (
-            <div className="space-y-2">
-              {todays.slice(0,4).map((b) => (
-                <button key={b.key || b.id} onClick={onJobs} className="w-full text-left border border-gray-200 rounded-xl p-3 flex items-center gap-3">
-                  <div className="w-1 self-stretch rounded-full" style={{ backgroundColor: "var(--accent)" }} />
-                  <div className="flex-1 min-w-0"><p className="text-sm font-medium text-gray-900 truncate">{b.customerName || "Customer"}</p><p className="text-xs text-gray-500">{b.slotLabel || formatSlotDate(b.dateISO)}</p></div>
-                  <span className="text-xs font-medium" style={{ color: "var(--accent)" }}>Open →</span>
-                </button>
-              ))}
-            </div>
-          )}
-        </section>
-
-        <section>
-          <h2 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--accent)" }}>Quick actions</h2>
-          <div className="grid grid-cols-2 gap-2">
-            <button onClick={onNewCustomer} className="rounded-xl px-3 py-3 text-sm font-medium text-white" style={{ backgroundColor: ACCENT_HEX }}>+ New customer</button>
-            <button onClick={onCustomers} className="rounded-xl px-3 py-3 text-sm font-medium border border-gray-200 text-gray-700">Customer directory</button>
-            <button onClick={onJobs} className="rounded-xl px-3 py-3 text-sm font-medium border border-gray-200 text-gray-700">Jobs & schedule</button>
-            {userRole === "owner" && <button onClick={onBooks} className="rounded-xl px-3 py-3 text-sm font-medium border border-gray-200 text-gray-700">Books</button>}
-          </div>
-        </section>
-
-        {!loading && unpaid.length > 0 && (
-          <button onClick={onJobs} className="w-full text-left rounded-xl p-4" style={{ backgroundColor: "var(--surface-alt)", border: "1px solid var(--border)" }}>
-            <p className="text-sm font-medium text-gray-900">{unpaid.length} unpaid job{unpaid.length === 1 ? "" : "s"}</p>
-            <p className="text-xs mt-1" style={{ color: "var(--warn)" }}>Tap to review completed work and payments.</p>
-          </button>
-        )}
-      </div>
-    </div>
-  );
-}
-
 function App() {
-  const [mode, setMode] = useState("home");
+  const [mode, setMode] = useState("business");
   const [editRequest, setEditRequest] = useState(null);
   const [prefillEstimate, setPrefillEstimate] = useState(null);
   const [customerDrawerOpen, setCustomerDrawerOpen] = useState(false);
@@ -6079,7 +5983,7 @@ function App() {
   const [teamDrawerOpen, setTeamDrawerOpen] = useState(false);
   const [returnToDirectoryPhone, setReturnToDirectoryPhone] = useState(null);
   const [directoryReopenPhone, setDirectoryReopenPhone] = useState(null);
-  const [bottomTabOrder, setBottomTabOrder] = useState(["home", "newcustomer", "business"]);
+  const [bottomTabOrder, setBottomTabOrder] = useState(["newcustomer", "business"]);
   const [utilityOrder, setUtilityOrder] = useState(["prices", "directory", "books", "bugs", "team", "darkmode", "logout"]);
   const [layoutEditMode, setLayoutEditMode] = useState(false);
   const [authToken, setAuthToken] = useState(null);
@@ -6107,7 +6011,7 @@ function App() {
         const r = await localStore.get("settings:nav-layout", false);
         if (r && r.value) {
           const parsed = JSON.parse(r.value);
-          if (Array.isArray(parsed.bottomOrder) && parsed.bottomOrder.length === 3) setBottomTabOrder(parsed.bottomOrder);
+          if (Array.isArray(parsed.bottomOrder) && parsed.bottomOrder.length === 2) setBottomTabOrder(parsed.bottomOrder);
           if (Array.isArray(parsed.utilityOrder) && parsed.utilityOrder.length === 7) setUtilityOrder(parsed.utilityOrder);
         }
       } catch (e) {}
@@ -6190,7 +6094,7 @@ function App() {
   }
 
   function swapBottomTabs() {
-    const next = [bottomTabOrder[2], bottomTabOrder[0], bottomTabOrder[1]];
+    const next = [bottomTabOrder[1], bottomTabOrder[0]];
     setBottomTabOrder(next);
     saveNavLayout(next, utilityOrder);
   }
@@ -6221,11 +6125,6 @@ function App() {
   }
 
   const BOTTOM_TAB_DEFS = {
-    home: {
-      label: "Home", icon: Home,
-      onClick: () => { setMode("home"); closeAllDrawers(); },
-      active: mode === "home",
-    },
     newcustomer: {
       label: "New Customer", icon: UserPlus,
       onClick: () => { setMode("newcustomer"); closeAllDrawers(); },
@@ -6347,16 +6246,6 @@ function App() {
             <Settings2 size={15} />
           </button>
         </div>
-        {mode === "home" && (
-          <DashboardView
-            userRole={authUser ? authUser.role : "owner"}
-            userName={authUser ? (authUser.name || authUser.username) : ""}
-            onNewCustomer={() => { setMode("newcustomer"); closeAllDrawers(); }}
-            onJobs={() => { setMode("business"); closeAllDrawers(); }}
-            onCustomers={() => { setCustomerDrawerOpen(true); setBooksDrawerOpen(false); setPricesDrawerOpen(false); setBugsDrawerOpen(false); setTeamDrawerOpen(false); }}
-            onBooks={() => { setBooksDrawerOpen(true); setCustomerDrawerOpen(false); setPricesDrawerOpen(false); setBugsDrawerOpen(false); setTeamDrawerOpen(false); }}
-          />
-        )}
         {mode === "newcustomer" && (
           <NewCustomerView editRequest={editRequest} onConsumeEditRequest={() => setEditRequest(null)}
             prefillEstimate={prefillEstimate} onConsumePrefillEstimate={() => setPrefillEstimate(null)}
@@ -6456,16 +6345,28 @@ function App() {
         )}
 
         <div className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white border-t border-gray-200 flex z-30" style={{ height: BOTTOM_TAB_HEIGHT }}>
-          {bottomTabOrder.map((id) => {
+          {bottomTabOrder.map((id, i) => {
             const def = BOTTOM_TAB_DEFS[id];
             const Icon = def.icon;
             return (
-              <button key={id} onClick={layoutEditMode ? undefined : def.onClick}
-                className="flex-1 h-full flex flex-col items-center justify-center gap-0.5"
-                style={{ color: def.active ? "var(--accent)" : "var(--text-muted)" }}>
-                <Icon size={21} />
-                <span className="text-xs font-medium">{def.label}</span>
-              </button>
+              <div key={id} className="flex-1 flex items-center">
+                {layoutEditMode && i === 1 && (
+                  <button onClick={swapBottomTabs} aria-label="Swap order" className="text-gray-300 px-1">
+                    <ArrowLeft size={13} />
+                  </button>
+                )}
+                <button onClick={layoutEditMode ? undefined : def.onClick}
+                  className="flex-1 h-full flex flex-col items-center justify-center gap-0.5"
+                  style={{ color: def.active ? "var(--accent)" : "var(--text-muted)" }}>
+                  <Icon size={22} />
+                  <span className="text-xs font-medium">{def.label}</span>
+                </button>
+                {layoutEditMode && i === 0 && (
+                  <button onClick={swapBottomTabs} aria-label="Swap order" className="text-gray-300 px-1">
+                    <ArrowRight size={13} />
+                  </button>
+                )}
+              </div>
             );
           })}
         </div>

@@ -4786,7 +4786,6 @@ function PriceSheetView() {
       </div>
 
       <div className="px-4 py-4 space-y-6">
-        {error && <p className="text-xs text-red-600 border border-red-200 rounded-lg p-2">{error}</p>}
         <section>
           <h2 className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: "var(--accent)" }}>
             Mowing — Recurring vs. One-Time
@@ -6141,9 +6140,19 @@ function CrewScheduleView({ userRole }) {
 
   async function loadSchedules() {
     setLoading(true);
-    const table = await loadTable(TABLE_KEYS.crewSchedules, false);
-    setSchedules(Object.values(table));
-    setLoading(false);
+    setError("");
+    try {
+      const res = await fetch(`${API_BASE}/api/crew-schedules`, { headers: authHeaders() });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Couldn't load crew schedules (${res.status}).`);
+      const rows = (data.schedules || []).map((row) => rowFromApi(row, ["schedule"], []));
+      setSchedules(rows);
+    } catch (e) {
+      setSchedules([]);
+      setError(e.message || "Couldn't load crew schedules.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => { loadSchedules(); }, []);
@@ -6152,7 +6161,7 @@ function CrewScheduleView({ userRole }) {
     setEditingUsername(person.username);
     const base = {};
     SCHEDULE_DAYS.forEach((d) => {
-      base[d.key] = person.schedule[d.key] || { working: false, start: "08:00", end: "16:00" };
+      base[d.key] = (person.schedule && person.schedule[d.key]) || { working: false, start: "08:00", end: "16:00" };
     });
     setDraft(base);
   }
@@ -6185,7 +6194,7 @@ function CrewScheduleView({ userRole }) {
   }
 
   function workingDaysSummary(schedule) {
-    const working = SCHEDULE_DAYS.filter((d) => schedule[d.key] && schedule[d.key].working);
+    const working = SCHEDULE_DAYS.filter((d) => schedule && schedule[d.key] && schedule[d.key].working);
     if (working.length === 0) return "No days set";
     return working.map((d) => d.label).join(", ");
   }
@@ -6204,6 +6213,8 @@ function CrewScheduleView({ userRole }) {
         {error && <p className="text-xs text-red-600 border border-red-200 rounded-lg p-2">{error}</p>}
         {loading ? (
           <p className="text-xs text-gray-400">Loading…</p>
+        ) : schedules.length === 0 ? (
+          <div className="border border-gray-200 rounded-lg p-4 text-xs text-gray-500">No active crew schedules found.</div>
         ) : (
           schedules.map((person) => (
             <div key={person.username} className="border border-gray-200 rounded-lg p-3 text-xs">

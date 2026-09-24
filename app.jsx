@@ -1513,7 +1513,12 @@ function BusinessView({ onEditRequest, onPrefillEstimate, userRole }) {
     refreshAvailability();
     refreshBookings();
     loadActiveTimer();
-    loadTimeLogs();
+    if (userRole === "owner") {
+      loadTimeLogs();
+    } else {
+      setTimeLogs([]);
+      setTimeLogsLoading(false);
+    }
     loadTodayOrder();
     loadCrewRoster();
   }, []);
@@ -6873,6 +6878,7 @@ function App() {
       setAuthToken(data.token);
       setAuthUser(data.user);
       setCurrentAuthToken(data.token);
+      closeAllDrawers();
       setLoginPassword("");
     } catch (e) {
       setLoginError("Couldn't reach the server — check your connection and try again.");
@@ -6896,6 +6902,7 @@ function App() {
     setAuthToken(null);
     setAuthUser(null);
     setCurrentAuthToken(null);
+    closeAllDrawers();
     setLoginUsername("");
     setLoginPassword("");
   }
@@ -7123,7 +7130,7 @@ function App() {
           </div>
         )}
 
-        {booksDrawerOpen && (
+        {booksDrawerOpen && authUser && authUser.role === "owner" && (
           <div className="fixed inset-0 z-20" style={{ top: "45px", bottom: BOTTOM_TAB_HEIGHT }}>
             <div className="absolute inset-0 bg-black/30" onClick={() => setBooksDrawerOpen(false)} />
             <div className="absolute inset-0 bg-white overflow-y-auto max-w-md mx-auto">
@@ -7153,7 +7160,7 @@ function App() {
           </div>
         )}
 
-        {teamDrawerOpen && (
+        {teamDrawerOpen && authUser && authUser.role === "owner" && (
           <div className="fixed inset-0 z-20" style={{ top: "45px", bottom: BOTTOM_TAB_HEIGHT }}>
             <div className="absolute inset-0 bg-black/30" onClick={() => setTeamDrawerOpen(false)} />
             <div className="absolute inset-0 bg-white overflow-y-auto max-w-md mx-auto">
@@ -7196,7 +7203,7 @@ function App() {
           </div>
         )}
 
-        {websiteDrawerOpen && (
+        {websiteDrawerOpen && authUser && authUser.role === "owner" && (
           <div className="fixed inset-0 z-20" style={{ top: "45px", bottom: BOTTOM_TAB_HEIGHT }}>
             <div className="absolute inset-0 bg-black/30" onClick={() => setWebsiteDrawerOpen(false)} />
             <div className="absolute inset-0 bg-white overflow-y-auto max-w-md mx-auto">

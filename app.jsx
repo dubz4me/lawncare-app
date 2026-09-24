@@ -1476,7 +1476,7 @@ function NewCustomerView({ editRequest, onConsumeEditRequest, prefillEstimate, o
               autoFocus className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm mb-1"
               placeholder={pinModalMode === "create" ? "Create password" : "Password"} />
             {pinError && <p className="text-xs text-red-600 mb-2">{pinError}</p>}
-            <div className="flex gap-2 mt-3">
+            <div className="flex gap-2 mt-4">
               <button onClick={closePinModal} className="flex-1 border border-gray-300 rounded-lg py-2 text-sm text-gray-700">Cancel</button>
               <button onClick={submitPinModal} className="flex-1 rounded-lg py-2 text-sm text-white" style={{ backgroundColor: ACCENT_HEX }}>
                 {pinModalMode === "create" ? "Set & apply" : "Authorize"}
@@ -2401,7 +2401,7 @@ function BusinessView({ onEditRequest, onPrefillEstimate, userRole }) {
               <span style={{ color: "var(--warn)" }}> — {pendingAgreementJobs.filter((j) => Math.floor((Date.now() - j.timestamp) / 86400000) >= 3).length} need follow-up</span>
             )}
           </p>
-          {historyLoading && <p className="text-xs text-gray-400">Loading…</p>}
+          {historyLoading && <p className="text-sm font-medium text-gray-500">Loading…</p>}
           {!historyLoading && pendingAgreementJobs.length === 0 && (
             <p className="text-sm text-gray-400 border border-gray-200 rounded-lg p-3 mb-3">Nothing waiting on agreement right now.</p>
           )}
@@ -2553,11 +2553,11 @@ function BusinessView({ onEditRequest, onPrefillEstimate, userRole }) {
 
           <p className="text-xs font-medium text-gray-500 mb-1.5">Scheduled next appointments ({standaloneBookings.length})</p>
           <p className="text-xs text-gray-400 mb-1.5">Recurring customers' upcoming visits not tied to a specific job below.</p>
-          {bookingsLoading && <p className="text-xs text-gray-400">Loading…</p>}
+          {bookingsLoading && <p className="text-sm font-medium text-gray-500">Loading…</p>}
           {!bookingsLoading && standaloneBookings.length === 0 && (
             <p className="text-sm text-gray-400 border border-gray-200 rounded-lg p-3">Nothing scheduled beyond the jobs above.</p>
           )}
-          <div className="space-y-1.5">
+          <div className="space-y-2.5">
             {standaloneBookings.map((b) => {
               const needsAccept = b.status === "pending";
               const job = linkedJob(b);
@@ -2624,11 +2624,11 @@ function BusinessView({ onEditRequest, onPrefillEstimate, userRole }) {
                         <>
                           <input type="time" value={(availability[d] && availability[d].start) || "08:00"}
                             onChange={(e) => setDayTime(d, "start", e.target.value)}
-                            className="border border-gray-300 rounded px-1.5 py-1 text-xs flex-1" />
+                            className="border border-gray-300 rounded-lg px-2 py-2 text-sm font-medium flex-1" />
                           <span className="text-gray-400">to</span>
                           <input type="time" value={(availability[d] && availability[d].end) || "16:00"}
                             onChange={(e) => setDayTime(d, "end", e.target.value)}
-                            className="border border-gray-300 rounded px-1.5 py-1 text-xs flex-1" />
+                            className="border border-gray-300 rounded-lg px-2 py-2 text-sm font-medium flex-1" />
                         </>
                       ) : (
                         <span className="text-gray-400">Day off</span>
@@ -2661,7 +2661,7 @@ function BusinessView({ onEditRequest, onPrefillEstimate, userRole }) {
           </button>
           {showSchedule && (
             <div className="mt-2 space-y-3 max-h-80 overflow-y-auto pr-1">
-              {(availabilityLoading || bookingsLoading) && <p className="text-xs text-gray-400">Loading…</p>}
+              {(availabilityLoading || bookingsLoading) && <p className="text-sm font-medium text-gray-500">Loading…</p>}
               {!availabilityLoading && !bookingsLoading && scheduleSlots.length === 0 && (
                 <p className="text-xs text-gray-400">No slots offered in the next two weeks — check your availability.</p>
               )}
@@ -2704,7 +2704,7 @@ function BusinessView({ onEditRequest, onPrefillEstimate, userRole }) {
 
           {showHistory && (
             <div className="mt-2 space-y-2">
-              {historyLoading && <p className="text-xs text-gray-400">Loading…</p>}
+              {historyLoading && <p className="text-sm font-medium text-gray-500">Loading…</p>}
               {!historyLoading && completedJobs.length === 0 && <p className="text-xs text-gray-400">No completed jobs yet.</p>}
               {!historyLoading &&
                 completedJobs.map((item) => (
@@ -2794,7 +2794,7 @@ function BusinessView({ onEditRequest, onPrefillEstimate, userRole }) {
           </button>
           {showTimeLog && (
             <div className="mt-2">
-              {timeLogsLoading && <p className="text-xs text-gray-400">Loading…</p>}
+              {timeLogsLoading && <p className="text-sm font-medium text-gray-500">Loading…</p>}
               {!timeLogsLoading && timeLogs.length === 0 && (
                 <p className="text-xs text-gray-400">No time logs yet — start a timer on a confirmed job to begin tracking.</p>
               )}
@@ -3189,7 +3189,7 @@ function BusinessView({ onEditRequest, onPrefillEstimate, userRole }) {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4" onClick={closeBookingDetail}>
           <div className="bg-white rounded-lg p-4 w-full max-w-xs shadow-lg" onClick={(e) => e.stopPropagation()}>
             {bookingDetailLoading || !bookingDetail ? (
-              <p className="text-xs text-gray-400">Loading…</p>
+              <p className="text-sm font-medium text-gray-500">Loading…</p>
             ) : (
               <>
                 <p className="text-sm font-semibold text-gray-900">{bookingDetail.booking.customerName || "Unnamed"}</p>
@@ -4007,7 +4007,7 @@ function CustomerDirectoryView({ onEditVisit, initialExpandedPhone, onConsumeIni
           className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm mb-4"
         />
 
-        {!allDataLoaded && <p className="text-xs text-gray-400">Loading…</p>}
+        {!allDataLoaded && <p className="text-sm font-medium text-gray-500">Loading…</p>}
         {allDataLoaded && customers.length === 0 && (
           <p className="text-sm text-gray-400 border border-gray-200 rounded-lg p-3">
             No customers yet — they'll show up here once you save an estimate with a phone number attached.
@@ -5457,7 +5457,7 @@ function ExpensesView() {
         <section>
           <h2 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--accent)" }}>Recent Expenses</h2>
           {expensesLoading ? (
-            <p className="text-xs text-gray-400">Loading…</p>
+            <p className="text-sm font-medium text-gray-500">Loading…</p>
           ) : expenses.length === 0 ? (
             <p className="text-xs text-gray-400">No expenses logged yet.</p>
           ) : (
@@ -5763,7 +5763,7 @@ function BugReportsView({ userRole, currentUsername }) {
               Reports {openReports.length > 0 ? `(${openReports.length} open)` : ""}
             </h2>
             {reportsLoading ? (
-              <p className="text-xs text-gray-400">Loading…</p>
+              <p className="text-sm font-medium text-gray-500">Loading…</p>
             ) : reports.length === 0 ? (
               <p className="text-xs text-gray-400">No reports yet.</p>
             ) : (
@@ -6020,11 +6020,11 @@ function TeamView({ authToken, currentUsername }) {
         <section>
           <h2 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--accent)" }}>Who Has Access</h2>
           {loading ? (
-            <p className="text-xs text-gray-400">Loading…</p>
+            <p className="text-sm font-medium text-gray-500">Loading…</p>
           ) : (
             <div className="space-y-2">
               {users.map((u) => (
-                <div key={u.username} className="border border-gray-200 rounded-lg p-3 text-xs">
+                <div key={u.username} className="border border-gray-200 rounded-lg p-4 text-sm">
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="font-medium text-gray-800">
@@ -6067,8 +6067,8 @@ function TeamView({ authToken, currentUsername }) {
                         <button onClick={() => setResetPassword(generateOnboardPassword())} className="text-xs px-2 py-1.5 border border-gray-300 rounded-md text-gray-500">New</button>
                       </div>
                       <div className="flex gap-2">
-                        <button onClick={() => setResetTarget(null)} className="flex-1 border border-gray-300 rounded-lg py-1.5 text-gray-700">Cancel</button>
-                        <button onClick={submitReset} disabled={resetting} className="flex-1 rounded-lg py-1.5 text-white" style={{ backgroundColor: ACCENT_HEX, opacity: resetting ? 0.7 : 1 }}>
+                        <button onClick={() => setResetTarget(null)} className="flex-1 border border-gray-300 rounded-lg py-2.5 text-sm font-semibold text-gray-800">Cancel</button>
+                        <button onClick={submitReset} disabled={resetting} className="flex-1 rounded-lg py-2.5 text-sm font-semibold text-white" style={{ backgroundColor: ACCENT_HEX, opacity: resetting ? 0.7 : 1 }}>
                           {resetting ? "…" : "Confirm Reset"}
                         </button>
                       </div>
@@ -6090,7 +6090,7 @@ function TeamView({ authToken, currentUsername }) {
           <h2 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--accent)" }}>Recently Deleted Customers</h2>
           <p className="text-xs text-gray-400 mb-2">If a customer was deleted by mistake — or by someone who shouldn't have — restore them here.</p>
           {deletedLoading ? (
-            <p className="text-xs text-gray-400">Loading…</p>
+            <p className="text-sm font-medium text-gray-500">Loading…</p>
           ) : deletedCustomers.length === 0 ? (
             <p className="text-xs text-gray-400">Nothing deleted recently.</p>
           ) : (
@@ -6210,21 +6210,21 @@ function CrewScheduleView({ userRole }) {
       </div>
 
       <div className="px-4 py-4 space-y-3">
-        {error && <p className="text-xs text-red-600 border border-red-200 rounded-lg p-2">{error}</p>}
+        {error && <p className="text-sm font-medium text-red-600 border border-red-200 rounded-lg p-3">{error}</p>}
         {loading ? (
-          <p className="text-xs text-gray-400">Loading…</p>
+          <p className="text-sm font-medium text-gray-500">Loading…</p>
         ) : schedules.length === 0 ? (
-          <div className="border border-gray-200 rounded-lg p-4 text-xs text-gray-500">No active crew schedules found.</div>
+          <div className="border border-gray-200 rounded-lg p-4 text-sm font-medium text-gray-600">No active crew schedules found.</div>
         ) : (
           schedules.map((person) => (
-            <div key={person.username} className="border border-gray-200 rounded-lg p-3 text-xs">
+            <div key={person.username} className="border border-gray-200 rounded-lg p-4 text-sm">
               {editingUsername === person.username ? (
                 <div>
-                  <p className="font-medium text-gray-800 mb-2">{person.name || person.username}</p>
+                  <p className="text-base font-semibold text-gray-900 mb-3">{person.name || person.username}</p>
                   <div className="space-y-1.5">
                     {SCHEDULE_DAYS.map((d) => (
-                      <div key={d.key} className="flex items-center gap-2">
-                        <label className="flex items-center gap-1.5 w-14 shrink-0">
+                      <div key={d.key} className="flex items-center gap-3 min-h-10">
+                        <label className="flex items-center gap-2 w-16 shrink-0 font-medium text-gray-800">
                           <input type="checkbox" checked={draft[d.key].working} onChange={() => toggleDay(d.key)}
                             style={{ accentColor: "var(--accent)", touchAction: "pan-y" }} />
                           {d.label}
@@ -6232,10 +6232,10 @@ function CrewScheduleView({ userRole }) {
                         {draft[d.key].working && (
                           <>
                             <input type="time" value={draft[d.key].start} onChange={(e) => setDayTime(d.key, "start", e.target.value)}
-                              className="border border-gray-300 rounded px-1.5 py-1 text-xs flex-1" />
-                            <span className="text-gray-400">–</span>
+                              className="border border-gray-300 rounded-lg px-2 py-2 text-sm font-medium flex-1" />
+                            <span className="text-gray-500 font-medium">–</span>
                             <input type="time" value={draft[d.key].end} onChange={(e) => setDayTime(d.key, "end", e.target.value)}
-                              className="border border-gray-300 rounded px-1.5 py-1 text-xs flex-1" />
+                              className="border border-gray-300 rounded-lg px-2 py-2 text-sm font-medium flex-1" />
                           </>
                         )}
                       </div>
@@ -6251,11 +6251,11 @@ function CrewScheduleView({ userRole }) {
               ) : (
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="font-medium text-gray-800">{person.name || person.username}<span className="ml-1.5 text-gray-400 font-normal">· {person.role === "owner" ? "Owner" : "Crew"}</span></p>
-                    <p className="text-gray-400 mt-0.5">{workingDaysSummary(person.schedule)}</p>
+                    <p className="text-base font-semibold text-gray-900">{person.name || person.username}<span className="ml-1.5 text-sm text-gray-500 font-medium">· {person.role === "owner" ? "Owner" : "Crew"}</span></p>
+                    <p className="text-sm font-medium text-gray-600 mt-1">{workingDaysSummary(person.schedule)}</p>
                   </div>
                   {userRole === "owner" && (
-                    <button onClick={() => startEdit(person)} className="text-gray-400"><Pencil size={14} /></button>
+                    <button onClick={() => startEdit(person)} className="text-gray-600 p-2"><Pencil size={18} /></button>
                   )}
                 </div>
               )}
@@ -6325,7 +6325,7 @@ function WebsiteSettingsView() {
   if (loading || !content) {
     return (
       <div className="pb-8 px-4 pt-5">
-        <p className="text-xs text-gray-400">Loading…</p>
+        <p className="text-sm font-medium text-gray-500">Loading…</p>
       </div>
     );
   }

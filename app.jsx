@@ -1476,7 +1476,7 @@ function NewCustomerView({ editRequest, onConsumeEditRequest, prefillEstimate, o
               autoFocus className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm mb-1"
               placeholder={pinModalMode === "create" ? "Create password" : "Password"} />
             {pinError && <p className="text-xs text-red-600 mb-2">{pinError}</p>}
-            <div className="flex gap-2 mt-4">
+            <div className="flex gap-2 mt-3">
               <button onClick={closePinModal} className="flex-1 border border-gray-300 rounded-lg py-2 text-sm text-gray-700">Cancel</button>
               <button onClick={submitPinModal} className="flex-1 rounded-lg py-2 text-sm text-white" style={{ backgroundColor: ACCENT_HEX }}>
                 {pinModalMode === "create" ? "Set & apply" : "Authorize"}
@@ -2401,7 +2401,7 @@ function BusinessView({ onEditRequest, onPrefillEstimate, userRole }) {
               <span style={{ color: "var(--warn)" }}> — {pendingAgreementJobs.filter((j) => Math.floor((Date.now() - j.timestamp) / 86400000) >= 3).length} need follow-up</span>
             )}
           </p>
-          {historyLoading && <p className="text-sm font-medium text-gray-500">Loading…</p>}
+          {historyLoading && <p className="text-xs text-gray-400">Loading…</p>}
           {!historyLoading && pendingAgreementJobs.length === 0 && (
             <p className="text-sm text-gray-400 border border-gray-200 rounded-lg p-3 mb-3">Nothing waiting on agreement right now.</p>
           )}
@@ -2553,11 +2553,11 @@ function BusinessView({ onEditRequest, onPrefillEstimate, userRole }) {
 
           <p className="text-xs font-medium text-gray-500 mb-1.5">Scheduled next appointments ({standaloneBookings.length})</p>
           <p className="text-xs text-gray-400 mb-1.5">Recurring customers' upcoming visits not tied to a specific job below.</p>
-          {bookingsLoading && <p className="text-sm font-medium text-gray-500">Loading…</p>}
+          {bookingsLoading && <p className="text-xs text-gray-400">Loading…</p>}
           {!bookingsLoading && standaloneBookings.length === 0 && (
             <p className="text-sm text-gray-400 border border-gray-200 rounded-lg p-3">Nothing scheduled beyond the jobs above.</p>
           )}
-          <div className="space-y-2.5">
+          <div className="space-y-1.5">
             {standaloneBookings.map((b) => {
               const needsAccept = b.status === "pending";
               const job = linkedJob(b);
@@ -2624,11 +2624,11 @@ function BusinessView({ onEditRequest, onPrefillEstimate, userRole }) {
                         <>
                           <input type="time" value={(availability[d] && availability[d].start) || "08:00"}
                             onChange={(e) => setDayTime(d, "start", e.target.value)}
-                            className="border border-gray-300 rounded-lg px-2 py-2 text-sm font-medium flex-1" />
+                            className="border border-gray-300 rounded px-1.5 py-1 text-xs flex-1" />
                           <span className="text-gray-400">to</span>
                           <input type="time" value={(availability[d] && availability[d].end) || "16:00"}
                             onChange={(e) => setDayTime(d, "end", e.target.value)}
-                            className="border border-gray-300 rounded-lg px-2 py-2 text-sm font-medium flex-1" />
+                            className="border border-gray-300 rounded px-1.5 py-1 text-xs flex-1" />
                         </>
                       ) : (
                         <span className="text-gray-400">Day off</span>
@@ -2661,7 +2661,7 @@ function BusinessView({ onEditRequest, onPrefillEstimate, userRole }) {
           </button>
           {showSchedule && (
             <div className="mt-2 space-y-3 max-h-80 overflow-y-auto pr-1">
-              {(availabilityLoading || bookingsLoading) && <p className="text-sm font-medium text-gray-500">Loading…</p>}
+              {(availabilityLoading || bookingsLoading) && <p className="text-xs text-gray-400">Loading…</p>}
               {!availabilityLoading && !bookingsLoading && scheduleSlots.length === 0 && (
                 <p className="text-xs text-gray-400">No slots offered in the next two weeks — check your availability.</p>
               )}
@@ -2704,7 +2704,7 @@ function BusinessView({ onEditRequest, onPrefillEstimate, userRole }) {
 
           {showHistory && (
             <div className="mt-2 space-y-2">
-              {historyLoading && <p className="text-sm font-medium text-gray-500">Loading…</p>}
+              {historyLoading && <p className="text-xs text-gray-400">Loading…</p>}
               {!historyLoading && completedJobs.length === 0 && <p className="text-xs text-gray-400">No completed jobs yet.</p>}
               {!historyLoading &&
                 completedJobs.map((item) => (
@@ -2794,7 +2794,7 @@ function BusinessView({ onEditRequest, onPrefillEstimate, userRole }) {
           </button>
           {showTimeLog && (
             <div className="mt-2">
-              {timeLogsLoading && <p className="text-sm font-medium text-gray-500">Loading…</p>}
+              {timeLogsLoading && <p className="text-xs text-gray-400">Loading…</p>}
               {!timeLogsLoading && timeLogs.length === 0 && (
                 <p className="text-xs text-gray-400">No time logs yet — start a timer on a confirmed job to begin tracking.</p>
               )}
@@ -3189,7 +3189,7 @@ function BusinessView({ onEditRequest, onPrefillEstimate, userRole }) {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4" onClick={closeBookingDetail}>
           <div className="bg-white rounded-lg p-4 w-full max-w-xs shadow-lg" onClick={(e) => e.stopPropagation()}>
             {bookingDetailLoading || !bookingDetail ? (
-              <p className="text-sm font-medium text-gray-500">Loading…</p>
+              <p className="text-xs text-gray-400">Loading…</p>
             ) : (
               <>
                 <p className="text-sm font-semibold text-gray-900">{bookingDetail.booking.customerName || "Unnamed"}</p>
@@ -4007,7 +4007,7 @@ function CustomerDirectoryView({ onEditVisit, initialExpandedPhone, onConsumeIni
           className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm mb-4"
         />
 
-        {!allDataLoaded && <p className="text-sm font-medium text-gray-500">Loading…</p>}
+        {!allDataLoaded && <p className="text-xs text-gray-400">Loading…</p>}
         {allDataLoaded && customers.length === 0 && (
           <p className="text-sm text-gray-400 border border-gray-200 rounded-lg p-3">
             No customers yet — they'll show up here once you save an estimate with a phone number attached.
@@ -4786,6 +4786,7 @@ function PriceSheetView() {
       </div>
 
       <div className="px-4 py-4 space-y-6">
+        {error && <p className="text-xs text-red-600 border border-red-200 rounded-lg p-2">{error}</p>}
         <section>
           <h2 className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: "var(--accent)" }}>
             Mowing — Recurring vs. One-Time
@@ -5457,7 +5458,7 @@ function ExpensesView() {
         <section>
           <h2 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--accent)" }}>Recent Expenses</h2>
           {expensesLoading ? (
-            <p className="text-sm font-medium text-gray-500">Loading…</p>
+            <p className="text-xs text-gray-400">Loading…</p>
           ) : expenses.length === 0 ? (
             <p className="text-xs text-gray-400">No expenses logged yet.</p>
           ) : (
@@ -5763,7 +5764,7 @@ function BugReportsView({ userRole, currentUsername }) {
               Reports {openReports.length > 0 ? `(${openReports.length} open)` : ""}
             </h2>
             {reportsLoading ? (
-              <p className="text-sm font-medium text-gray-500">Loading…</p>
+              <p className="text-xs text-gray-400">Loading…</p>
             ) : reports.length === 0 ? (
               <p className="text-xs text-gray-400">No reports yet.</p>
             ) : (
@@ -6020,11 +6021,11 @@ function TeamView({ authToken, currentUsername }) {
         <section>
           <h2 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--accent)" }}>Who Has Access</h2>
           {loading ? (
-            <p className="text-sm font-medium text-gray-500">Loading…</p>
+            <p className="text-xs text-gray-400">Loading…</p>
           ) : (
             <div className="space-y-2">
               {users.map((u) => (
-                <div key={u.username} className="border border-gray-200 rounded-lg p-4 text-sm">
+                <div key={u.username} className="border border-gray-200 rounded-lg p-3 text-xs">
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="font-medium text-gray-800">
@@ -6067,8 +6068,8 @@ function TeamView({ authToken, currentUsername }) {
                         <button onClick={() => setResetPassword(generateOnboardPassword())} className="text-xs px-2 py-1.5 border border-gray-300 rounded-md text-gray-500">New</button>
                       </div>
                       <div className="flex gap-2">
-                        <button onClick={() => setResetTarget(null)} className="flex-1 border border-gray-300 rounded-lg py-2.5 text-sm font-semibold text-gray-800">Cancel</button>
-                        <button onClick={submitReset} disabled={resetting} className="flex-1 rounded-lg py-2.5 text-sm font-semibold text-white" style={{ backgroundColor: ACCENT_HEX, opacity: resetting ? 0.7 : 1 }}>
+                        <button onClick={() => setResetTarget(null)} className="flex-1 border border-gray-300 rounded-lg py-1.5 text-gray-700">Cancel</button>
+                        <button onClick={submitReset} disabled={resetting} className="flex-1 rounded-lg py-1.5 text-white" style={{ backgroundColor: ACCENT_HEX, opacity: resetting ? 0.7 : 1 }}>
                           {resetting ? "…" : "Confirm Reset"}
                         </button>
                       </div>
@@ -6090,7 +6091,7 @@ function TeamView({ authToken, currentUsername }) {
           <h2 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--accent)" }}>Recently Deleted Customers</h2>
           <p className="text-xs text-gray-400 mb-2">If a customer was deleted by mistake — or by someone who shouldn't have — restore them here.</p>
           {deletedLoading ? (
-            <p className="text-sm font-medium text-gray-500">Loading…</p>
+            <p className="text-xs text-gray-400">Loading…</p>
           ) : deletedCustomers.length === 0 ? (
             <p className="text-xs text-gray-400">Nothing deleted recently.</p>
           ) : (
@@ -6144,24 +6145,29 @@ function CrewScheduleView({ userRole }) {
     try {
       const res = await fetch(`${API_BASE}/api/crew-schedules`, { headers: authHeaders() });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || `Couldn't load crew schedules (${res.status}).`);
+      if (!res.ok) throw new Error(data.error || "Couldn't load the crew schedule.");
       const rows = (data.schedules || []).map((row) => rowFromApi(row, ["schedule"], []));
       setSchedules(rows);
     } catch (e) {
       setSchedules([]);
-      setError(e.message || "Couldn't load crew schedules.");
-    } finally {
-      setLoading(false);
+      setError(e.message || "Couldn't load the crew schedule.");
     }
+    setLoading(false);
   }
 
   useEffect(() => { loadSchedules(); }, []);
 
+  function safeSchedule(person) {
+    return person && person.schedule && typeof person.schedule === "object" ? person.schedule : {};
+  }
+
   function startEdit(person) {
     setEditingUsername(person.username);
+    setError("");
+    const schedule = safeSchedule(person);
     const base = {};
     SCHEDULE_DAYS.forEach((d) => {
-      base[d.key] = (person.schedule && person.schedule[d.key]) || { working: false, start: "08:00", end: "16:00" };
+      base[d.key] = schedule[d.key] || { working: false, start: "08:00", end: "16:00" };
     });
     setDraft(base);
   }
@@ -6193,75 +6199,170 @@ function CrewScheduleView({ userRole }) {
     setSaving(false);
   }
 
-  function workingDaysSummary(schedule) {
-    const working = SCHEDULE_DAYS.filter((d) => schedule && schedule[d.key] && schedule[d.key].working);
-    if (working.length === 0) return "No days set";
-    return working.map((d) => d.label).join(", ");
+  function formatShift(day) {
+    if (!day || !day.working) return "Off";
+    const fmt = (value) => {
+      if (!value) return "—";
+      const [h, m] = value.split(":").map(Number);
+      if (!Number.isFinite(h)) return value;
+      const period = h >= 12 ? "PM" : "AM";
+      const hh = h % 12 || 12;
+      return `${hh}${m ? `:${String(m).padStart(2, "0")}` : ""}${period}`;
+    };
+    return `${fmt(day.start)}–${fmt(day.end)}`;
   }
 
+  const todayKey = DAY_KEYS[new Date().getDay()];
+  const workingToday = schedules.filter((person) => {
+    const today = safeSchedule(person)[todayKey];
+    return today && today.working;
+  });
+
   return (
-    <div className="pb-8">
-      <div className="px-4 pt-5 pb-4 border-b border-gray-200 flex items-center gap-3">
-        <Badge />
-        <div>
-          <p className="text-base font-medium text-gray-900">R-DUB's Lawn Care</p>
-          <p className="text-sm" style={{ color: "var(--accent)" }}>Crew Schedule</p>
+    <div className="pb-10" style={{ background: "var(--surface-alt)", minHeight: "100%" }}>
+      <div className="px-4 pt-5 pb-5 border-b border-gray-200 bg-white">
+        <div className="flex items-center gap-3">
+          <Badge />
+          <div className="min-w-0">
+            <p className="text-lg font-semibold text-gray-900 leading-tight">Crew Schedule</p>
+            <p className="text-sm text-gray-600 mt-0.5">See who's working and manage the week.</p>
+          </div>
         </div>
       </div>
 
-      <div className="px-4 py-4 space-y-3">
-        {error && <p className="text-sm font-medium text-red-600 border border-red-200 rounded-lg p-3">{error}</p>}
+      <div className="px-4 py-4 space-y-4">
+        {error && (
+          <div className="text-sm font-medium text-red-700 border border-red-200 bg-red-50 rounded-xl p-3">{error}</div>
+        )}
+
+        {!loading && (
+          <div className="rounded-2xl p-4 text-white shadow-sm" style={{ background: "linear-gradient(135deg, #4B2E70 0%, #68439A 100%)" }}>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "#DDD2F0" }}>Working Today</p>
+                <p className="text-2xl font-bold mt-1">{workingToday.length}</p>
+                <p className="text-sm mt-0.5" style={{ color: "#E9E2F4" }}>{workingToday.length === 1 ? "crew member scheduled" : "crew members scheduled"}</p>
+              </div>
+              <div className="rounded-xl px-3 py-2 text-center" style={{ background: "rgba(255,255,255,.12)" }}>
+                <Calendar size={20} />
+                <p className="text-xs font-semibold mt-1">{new Date().toLocaleDateString(undefined, { weekday: "short" })}</p>
+              </div>
+            </div>
+            <div className="mt-4 pt-3 flex flex-wrap gap-2" style={{ borderTop: "1px solid rgba(255,255,255,.16)" }}>
+              {workingToday.length ? workingToday.map((person) => (
+                <span key={person.username} className="rounded-full px-3 py-1.5 text-sm font-semibold" style={{ background: "rgba(16,185,129,.20)", border: "1px solid rgba(110,231,183,.32)" }}>
+                  {person.name || person.username} · {formatShift(safeSchedule(person)[todayKey])}
+                </span>
+              )) : <span className="text-sm" style={{ color: "#E9E2F4" }}>No one is scheduled today.</span>}
+            </div>
+          </div>
+        )}
+
+        <div className="flex items-end justify-between gap-3 px-1">
+          <div>
+            <p className="text-base font-bold text-gray-900">Weekly Crew</p>
+            <p className="text-sm text-gray-600">Tap Edit to change availability.</p>
+          </div>
+          {!loading && <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-white border border-gray-200 text-gray-600">{schedules.length} people</span>}
+        </div>
+
         {loading ? (
-          <p className="text-sm font-medium text-gray-500">Loading…</p>
+          <div className="bg-white border border-gray-200 rounded-2xl p-5">
+            <p className="text-sm font-medium text-gray-500">Loading crew schedule…</p>
+          </div>
         ) : schedules.length === 0 ? (
-          <div className="border border-gray-200 rounded-lg p-4 text-sm font-medium text-gray-600">No active crew schedules found.</div>
-        ) : (
-          schedules.map((person) => (
-            <div key={person.username} className="border border-gray-200 rounded-lg p-4 text-sm">
+          <div className="bg-white border border-gray-200 rounded-2xl p-5 text-center">
+            <Users size={28} className="mx-auto text-gray-400" />
+            <p className="text-base font-semibold text-gray-900 mt-2">No crew accounts yet</p>
+            <p className="text-sm text-gray-600 mt-1">Add crew members in Team View and they'll appear here.</p>
+          </div>
+        ) : schedules.map((person) => {
+          const schedule = safeSchedule(person);
+          const today = schedule[todayKey];
+          const isToday = !!(today && today.working);
+          const workCount = SCHEDULE_DAYS.filter((d) => schedule[d.key] && schedule[d.key].working).length;
+          return (
+            <div key={person.username} className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
               {editingUsername === person.username ? (
-                <div>
-                  <p className="text-base font-semibold text-gray-900 mb-3">{person.name || person.username}</p>
-                  <div className="space-y-1.5">
-                    {SCHEDULE_DAYS.map((d) => (
-                      <div key={d.key} className="flex items-center gap-3 min-h-10">
-                        <label className="flex items-center gap-2 w-16 shrink-0 font-medium text-gray-800">
-                          <input type="checkbox" checked={draft[d.key].working} onChange={() => toggleDay(d.key)}
-                            style={{ accentColor: "var(--accent)", touchAction: "pan-y" }} />
-                          {d.label}
-                        </label>
-                        {draft[d.key].working && (
-                          <>
-                            <input type="time" value={draft[d.key].start} onChange={(e) => setDayTime(d.key, "start", e.target.value)}
-                              className="border border-gray-300 rounded-lg px-2 py-2 text-sm font-medium flex-1" />
-                            <span className="text-gray-500 font-medium">–</span>
-                            <input type="time" value={draft[d.key].end} onChange={(e) => setDayTime(d.key, "end", e.target.value)}
-                              className="border border-gray-300 rounded-lg px-2 py-2 text-sm font-medium flex-1" />
-                          </>
-                        )}
-                      </div>
-                    ))}
+                <div className="p-4">
+                  <div className="flex items-center justify-between gap-3 mb-4">
+                    <div>
+                      <p className="text-lg font-bold text-gray-900">{person.name || person.username}</p>
+                      <p className="text-sm text-gray-600">Set normal weekly hours</p>
+                    </div>
+                    <span className="text-xs font-bold uppercase tracking-wide px-2.5 py-1 rounded-full" style={{ color: "var(--accent)", background: "var(--surface-alt)" }}>Editing</span>
                   </div>
-                  <div className="flex gap-2 mt-3">
-                    <button onClick={() => setEditingUsername(null)} className="flex-1 border border-gray-300 rounded-lg py-1.5 text-gray-700">Cancel</button>
-                    <button onClick={saveSchedule} disabled={saving} className="flex-1 rounded-lg py-1.5 text-white" style={{ backgroundColor: ACCENT_HEX, opacity: saving ? 0.7 : 1 }}>
-                      {saving ? "Saving…" : "Save"}
+                  <div className="space-y-2">
+                    {SCHEDULE_DAYS.map((d) => {
+                      const day = draft[d.key] || { working: false, start: "08:00", end: "16:00" };
+                      return (
+                        <div key={d.key} className="rounded-xl border border-gray-200 p-3">
+                          <div className="flex items-center justify-between gap-3">
+                            <label className="flex items-center gap-2.5 text-sm font-bold text-gray-900 min-w-0">
+                              <input type="checkbox" checked={!!day.working} onChange={() => toggleDay(d.key)} style={{ accentColor: "var(--accent)", width: 18, height: 18, touchAction: "pan-y" }} />
+                              {d.label}
+                            </label>
+                            <span className={`text-xs font-semibold ${day.working ? "text-emerald-700" : "text-gray-500"}`}>{day.working ? "Working" : "Off"}</span>
+                          </div>
+                          {day.working && (
+                            <div className="grid grid-cols-2 gap-2 mt-3">
+                              <label className="text-xs font-semibold text-gray-600">Start
+                                <input type="time" value={day.start} onChange={(e) => setDayTime(d.key, "start", e.target.value)} className="mt-1 w-full border border-gray-300 rounded-lg px-2.5 py-2.5 text-sm font-semibold text-gray-900" />
+                              </label>
+                              <label className="text-xs font-semibold text-gray-600">End
+                                <input type="time" value={day.end} onChange={(e) => setDayTime(d.key, "end", e.target.value)} className="mt-1 w-full border border-gray-300 rounded-lg px-2.5 py-2.5 text-sm font-semibold text-gray-900" />
+                              </label>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 mt-4">
+                    <button onClick={() => { setEditingUsername(null); setError(""); }} className="border border-gray-300 rounded-xl py-3 text-sm font-bold text-gray-700">Cancel</button>
+                    <button onClick={saveSchedule} disabled={saving} className="rounded-xl py-3 text-sm font-bold text-white" style={{ backgroundColor: ACCENT_HEX, opacity: saving ? 0.7 : 1 }}>
+                      {saving ? "Saving…" : "Save Schedule"}
                     </button>
                   </div>
                 </div>
               ) : (
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-base font-semibold text-gray-900">{person.name || person.username}<span className="ml-1.5 text-sm text-gray-500 font-medium">· {person.role === "owner" ? "Owner" : "Crew"}</span></p>
-                    <p className="text-sm font-medium text-gray-600 mt-1">{workingDaysSummary(person.schedule)}</p>
+                <>
+                  <div className="p-4 flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-11 h-11 rounded-xl flex items-center justify-center text-base font-bold shrink-0" style={{ color: "var(--accent)", background: "var(--surface-alt)" }}>
+                        {(person.name || person.username || "?").trim().charAt(0).toUpperCase()}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center flex-wrap gap-2">
+                          <p className="text-base font-bold text-gray-900 truncate">{person.name || person.username}</p>
+                          <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${isToday ? "text-emerald-700 bg-emerald-50" : "text-gray-500 bg-gray-100"}`}>{isToday ? "On Today" : "Off Today"}</span>
+                        </div>
+                        <p className="text-sm text-gray-600 mt-0.5">{person.role === "owner" ? "Owner" : person.role === "manager" ? "Manager" : "Crew"} · {workCount} {workCount === 1 ? "day" : "days"}/week</p>
+                      </div>
+                    </div>
+                    {userRole === "owner" && (
+                      <button onClick={() => startEdit(person)} className="shrink-0 flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-sm font-bold text-gray-700 bg-white">
+                        <Pencil size={15} /> Edit
+                      </button>
+                    )}
                   </div>
-                  {userRole === "owner" && (
-                    <button onClick={() => startEdit(person)} className="text-gray-600 p-2"><Pencil size={18} /></button>
-                  )}
-                </div>
+                  <div className="px-3 pb-3 grid grid-cols-7 gap-1.5">
+                    {SCHEDULE_DAYS.map((d) => {
+                      const day = schedule[d.key];
+                      const working = !!(day && day.working);
+                      return (
+                        <div key={d.key} className={`rounded-lg py-2 px-1 text-center border ${working ? "border-emerald-200 bg-emerald-50" : "border-gray-200 bg-gray-50"}`}>
+                          <p className={`text-xs font-bold ${working ? "text-emerald-700" : "text-gray-500"}`}>{d.label.charAt(0)}</p>
+                          <p className={`mt-1 font-bold ${working ? "text-gray-900" : "text-gray-400"}`} style={{ fontSize: 10 }}>{working ? formatShift(day).split("–")[0] : "Off"}</p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
               )}
             </div>
-          ))
-        )}
+          );
+        })}
       </div>
     </div>
   );
@@ -6325,7 +6426,7 @@ function WebsiteSettingsView() {
   if (loading || !content) {
     return (
       <div className="pb-8 px-4 pt-5">
-        <p className="text-sm font-medium text-gray-500">Loading…</p>
+        <p className="text-xs text-gray-400">Loading…</p>
       </div>
     );
   }

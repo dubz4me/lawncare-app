@@ -4786,7 +4786,6 @@ function PriceSheetView() {
       </div>
 
       <div className="px-4 py-4 space-y-6">
-        {error && <p className="text-xs text-red-600 border border-red-200 rounded-lg p-2">{error}</p>}
         <section>
           <h2 className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: "var(--accent)" }}>
             Mowing — Recurring vs. One-Time

@@ -59,10 +59,27 @@ const ClipboardList = makeIcon(<>
 const Settings2 = makeIcon(<>
   <path d="M20 7h-9M14 17H5" /><circle cx="17" cy="17" r="3" /><circle cx="7" cy="7" r="3" />
 </>);
-const Clock3 = makeIcon(<><circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 16 14" /></>);
 const Bug = makeIcon(<>
   <rect x="8" y="6" width="8" height="14" rx="4" />
   <path d="M19 7l-3 2M5 7l3 2M19 19l-3-2M5 19l3-2M12 6V3M12 20v1M3 13h5M16 13h5M9 13h6" />
+</>);
+const KeyRound = makeIcon(<>
+  <path d="M2.5 21.5L11 13" />
+  <path d="M16.5 3a5.5 5.5 0 1 0 4.5 8.66V16h-2.5v2.5H16V21h-2.5l-2.16-2.16A5.5 5.5 0 0 0 16.5 3z" />
+</>);
+const Clock3 = makeIcon(<><circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 16 14" /></>);
+
+const Calendar = makeIcon(<>
+  <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+  <line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
+</>);
+const Globe = makeIcon(<>
+  <circle cx="12" cy="12" r="10" />
+  <line x1="2" y1="12" x2="22" y2="12" />
+  <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+</>);
+const LockIcon = makeIcon(<>
+  <rect x="3" y="11" width="18" height="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" />
 </>);
 
 
@@ -456,6 +473,10 @@ const TABLE_KEYS = {
     endpoint: "/api/bug-reports", arrayKey: "bugReports", idField: "id",
     jsonFields: [], boolFields: [],
   },
+  crewSchedules: {
+    endpoint: "/api/crew-schedules", arrayKey: "schedules", idField: "username",
+    jsonFields: ["schedule"], boolFields: [],
+  },
 };
 
 function authHeaders(extra) {
@@ -641,7 +662,7 @@ function emptyBuilderState() {
   };
 }
 
-function NewCustomerView({ editRequest, onConsumeEditRequest, prefillEstimate, onConsumePrefillEstimate, onSavedExisting }) {
+function NewCustomerView({ editRequest, onConsumeEditRequest, prefillEstimate, onConsumePrefillEstimate, onSavedExisting, userRole }) {
   const [motivationLine] = useState(() => randomMotivationLine());
   const [mowingEnabled, setMowingEnabled] = useState(false);
   const [mowingType, setMowingType] = useState("recurring");
@@ -1120,6 +1141,12 @@ function NewCustomerView({ editRequest, onConsumeEditRequest, prefillEstimate, o
           </div>
         )}
 
+        {editingTimestamp && userRole === "crew" && (status === "confirmed" || status === "completed") && (
+          <div className="border rounded-lg px-3 py-2 text-xs" style={{ borderColor: "var(--accent)", backgroundColor: "var(--surface-alt)", color: "var(--text-muted)" }}>
+            Pricing is locked on this job — it's already {status}. Notes, photos, and other details can still be updated; price changes need the owner or a manager.
+          </div>
+        )}
+
         <section className="space-y-3">
           <h2 className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--accent)" }}>Customer info</h2>
           <div>
@@ -1478,6 +1505,7 @@ function BusinessView({ onEditRequest, onPrefillEstimate, userRole }) {
   const [showAvailabilityEditor, setShowAvailabilityEditor] = useState(false);
   const [availabilitySaving, setAvailabilitySaving] = useState(false);
   const [availabilitySavedFeedback, setAvailabilitySavedFeedback] = useState(false);
+  const [crewRoster, setCrewRoster] = useState([]);
 
   const [bookings, setBookings] = useState([]);
   const [bookingsLoading, setBookingsLoading] = useState(true);
@@ -1529,7 +1557,19 @@ function BusinessView({ onEditRequest, onPrefillEstimate, userRole }) {
     loadActiveTimer();
     loadTimeLogs();
     loadTodayOrder();
+    loadCrewRoster();
   }, []);
+
+  async function loadCrewRoster() {
+    const table = await loadTable(TABLE_KEYS.crewSchedules, false);
+    setCrewRoster(Object.values(table));
+  }
+
+  async function assignJob(booking, username) {
+    const updated = { ...booking, assignedTo: username || null };
+    setBookings((prev) => prev.map((b) => (b.key === booking.key ? updated : b)));
+    await setTableRecord(TABLE_KEYS.bookings, true, booking.key, updated);
+  }
 
   async function loadTodayOrder() {
     const todayKeyISO = new Date().toISOString().slice(0, 10);
@@ -1574,6 +1614,14 @@ function BusinessView({ onEditRequest, onPrefillEstimate, userRole }) {
   }
 
   async function startTimer(job) {
+    // Accountability rule: every job must have a before-service photo on file
+    // before work can begin. This protects both the customer and the crew by
+    // documenting the property's pre-service condition.
+    if (!job.hasBeforePhoto) {
+      setCompletionToast("Before photo required — document the property before starting work.");
+      setTimeout(() => setCompletionToast(""), 5000);
+      return false;
+    }
     const t = {
       jobTimestamp: job.timestamp, customerName: job.customerName || "",
       address: job.address || "", startedAt: Date.now(),
@@ -1582,7 +1630,12 @@ function BusinessView({ onEditRequest, onPrefillEstimate, userRole }) {
       await localStore.set("active-timer", JSON.stringify(t), false);
       setActiveTimer(t);
       setNowTick(Date.now());
-    } catch (e) {}
+      return true;
+    } catch (e) {
+      setCompletionToast("Couldn't start the job timer — try again.");
+      setTimeout(() => setCompletionToast(""), 4000);
+      return false;
+    }
   }
 
   async function loadTimeLogs() {
@@ -1701,6 +1754,14 @@ function BusinessView({ onEditRequest, onPrefillEstimate, userRole }) {
   }
 
   async function deletePhoto(item, kind) {
+    // Before-service photos are accountability records and shouldn't be silently
+    // removable after capture — that's the whole point of requiring one. The owner
+    // keeps an override for a genuine mistake (wrong photo, blurry shot); crew does
+    // not, since letting crew redo it would defeat the purpose.
+    if (kind === "before" && userRole !== "owner") {
+      setPhotoError("Before-service photos are required accountability records and can't be deleted from the visit. Ask the owner if this one needs to be replaced.");
+      return;
+    }
     const storageKey = kind === "before" ? `photo-before:${item.timestamp}` : `photo:${item.timestamp}`;
     const flagField = kind === "before" ? "hasBeforePhoto" : "hasPhoto";
     try {
@@ -1724,6 +1785,11 @@ function BusinessView({ onEditRequest, onPrefillEstimate, userRole }) {
   }
 
   async function markComplete(item, paidNow) {
+    if (!item.hasBeforePhoto) {
+      setCompletionToast("Can't complete this job — the required before-service photo is missing.");
+      setTimeout(() => setCompletionToast(""), 5000);
+      return;
+    }
     const timerRunningHere = activeTimer && activeTimer.jobTimestamp === item.timestamp;
     let loggedMinutes = null;
 
@@ -2141,6 +2207,7 @@ function BusinessView({ onEditRequest, onPrefillEstimate, userRole }) {
 
       const moved = [];
       const skipped = [];
+      const moves = [];
 
       for (const t of todaysJobs) {
         const oldSlotId = t.booking.slotId;
@@ -2150,21 +2217,27 @@ function BusinessView({ onEditRequest, onPrefillEstimate, userRole }) {
           continue;
         }
         const isExactMatch = newSlot.dateISO === newDateISO && newSlot.slotId === oldSlotId;
-        try {
-          await deleteTableRecord(TABLE_KEYS.bookings, true, t.booking.key);
-          const newBookingData = { ...t.booking, dateISO: newSlot.dateISO, slotId: newSlot.slotId, slotLabel: newSlot.slotLabel, startMs: newSlot.startMs };
-          delete newBookingData.key;
-          await setTableRecord(TABLE_KEYS.bookings, true, `${newSlot.dateISO}:${newSlot.slotId}`, newBookingData);
+        const newBookingData = { ...t.booking, id: `${newSlot.dateISO}:${newSlot.slotId}`, dateISO: newSlot.dateISO, slotId: newSlot.slotId, slotLabel: newSlot.slotLabel, startMs: newSlot.startMs };
+        delete newBookingData.key;
+        const move = { oldBookingKey: t.booking.key, newBooking: newBookingData };
+        if (t.appointment) {
+          move.oldApptId = `${t.phone}:${t.booking.startMs}`;
+          move.newAppt = { ...t.appointment, id: `${t.phone}:${newSlot.startMs}`, dateISO: newSlot.dateISO, slotId: newSlot.slotId, slotLabel: newSlot.slotLabel, startMs: newSlot.startMs, updatedAt: Date.now() };
+        }
+        moves.push(move);
+        bookedSet.add(newSlot.key);
+        moved.push({ name: t.customerName, phone: t.phone, dateISO: newSlot.dateISO, slotLabel: newSlot.slotLabel, isExactMatch });
+      }
 
-          if (t.appointment) {
-            await deleteTableRecord(TABLE_KEYS.appointments, true, `${t.phone}:${t.booking.startMs}`);
-            const newAppt = { ...t.appointment, dateISO: newSlot.dateISO, slotId: newSlot.slotId, slotLabel: newSlot.slotLabel, startMs: newSlot.startMs, updatedAt: Date.now() };
-            await setTableRecord(TABLE_KEYS.appointments, true, `${t.phone}:${newSlot.startMs}`, newAppt);
-          }
-          bookedSet.add(newSlot.key);
-          moved.push({ name: t.customerName, phone: t.phone, dateISO: newSlot.dateISO, slotLabel: newSlot.slotLabel, isExactMatch });
-        } catch (e) {
-          skipped.push({ name: t.customerName, reason: "something went wrong moving this one" });
+      if (moves.length > 0) {
+        const res = await fetch(`${API_BASE}/api/bookings/bulk-reschedule`, {
+          method: "POST",
+          headers: authHeaders({ "Content-Type": "application/json" }),
+          body: JSON.stringify({ moves }),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error || "Couldn't reschedule the day.");
         }
       }
 
@@ -2211,7 +2284,7 @@ function BusinessView({ onEditRequest, onPrefillEstimate, userRole }) {
             <h2 className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--accent)" }}>
               Today{todaysJobs.length > 0 ? ` (${todaysJobs.length})` : ""}
             </h2>
-            {todaysJobs.length > 0 && (
+            {todaysJobs.length > 0 && (userRole === "owner" || userRole === "manager") && (
               <button onClick={() => { setRescheduleNewDate(""); setRescheduleResult(null); setRescheduleCopyFeedback({}); setRescheduleDayOpen(true); }}
                 className="text-xs rounded-full px-3 py-1 border" style={{ borderColor: "var(--warn)", color: "var(--warn)" }}>
                 ⛈ Reschedule today
@@ -2261,6 +2334,23 @@ function BusinessView({ onEditRequest, onPrefillEstimate, userRole }) {
                         className="text-xs underline" style={{ color: "var(--accent)" }}>
                         Directions
                       </a>
+                    )}
+                  </div>
+                  <div className="mt-1.5" onClick={(e) => e.stopPropagation()}>
+                    {userRole === "owner" ? (
+                      <select value={t.booking.assignedTo || ""} onChange={(e) => assignJob(t.booking, e.target.value)}
+                        className="text-xs border border-gray-300 rounded-full px-2 py-0.5 text-gray-600">
+                        <option value="">Unassigned</option>
+                        {crewRoster.map((p) => (
+                          <option key={p.username} value={p.username}>{p.name || p.username}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      t.booking.assignedTo && (
+                        <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: "var(--surface-alt)", color: "var(--text-muted)" }}>
+                          Assigned: {(crewRoster.find((p) => p.username === t.booking.assignedTo) || {}).name || t.booking.assignedTo}
+                        </span>
+                      )
                     )}
                   </div>
                   </div>
@@ -2368,9 +2458,11 @@ function BusinessView({ onEditRequest, onPrefillEstimate, userRole }) {
                     <button onClick={(e) => { e.stopPropagation(); onEditRequest(item); }} className="text-xs text-gray-600 border border-gray-300 rounded-full px-3 py-1">
                       Edit
                     </button>
+                    {(userRole === "owner" || userRole === "manager") && (
                     <button onClick={(e) => { e.stopPropagation(); deleteEstimateItem(item); }} className="text-gray-400 ml-auto" aria-label="Delete estimate">
                       <Trash2 size={15} />
                     </button>
+                    )}
                   </div>
                 </div>
                 );
@@ -2429,9 +2521,9 @@ function BusinessView({ onEditRequest, onPrefillEstimate, userRole }) {
                     </div>
                     <div className="flex items-center gap-2 mt-2 flex-wrap">
                       {!timerRunningHere && (
-                        <button onClick={(e) => { e.stopPropagation(); startTimer(item); }} disabled={!!timerRunningElsewhere}
-                          className="text-xs rounded-full px-3 py-1 border" style={{ borderColor: "var(--accent)", color: "var(--accent)", opacity: timerRunningElsewhere ? 0.4 : 1 }}>
-                          Start timer
+                        <button onClick={(e) => { e.stopPropagation(); startTimer(item); }} disabled={!!timerRunningElsewhere || !item.hasBeforePhoto}
+                          className="text-xs rounded-full px-3 py-1 border" style={{ borderColor: item.hasBeforePhoto ? "var(--accent)" : "var(--warn)", color: item.hasBeforePhoto ? "var(--accent)" : "var(--warn)", opacity: timerRunningElsewhere ? 0.4 : 1 }}>
+                          {item.hasBeforePhoto ? "Start timer" : "Before photo required"}
                         </button>
                       )}
                       <button onClick={(e) => { e.stopPropagation(); markComplete(item); }} disabled={!timerRunningHere}
@@ -2442,12 +2534,16 @@ function BusinessView({ onEditRequest, onPrefillEstimate, userRole }) {
                       <button onClick={(e) => { e.stopPropagation(); onEditRequest(item); }} className="text-xs text-gray-600 border border-gray-300 rounded-full px-3 py-1">
                         Edit
                       </button>
+                      {(userRole === "owner" || userRole === "manager") && (
                       <button onClick={(e) => { e.stopPropagation(); deleteEstimateItem(item); }} className="text-gray-400 ml-auto" aria-label="Delete estimate">
                         <Trash2 size={15} />
                       </button>
+                      )}
                     </div>
                     {!timerRunningHere && !timerRunningElsewhere && (
-                      <p className="text-xs text-gray-400 mt-1">Start the timer before marking this job complete.</p>
+                      <p className="text-xs mt-1" style={{ color: item.hasBeforePhoto ? "var(--text-faint)" : "var(--warn)" }}>
+                        {item.hasBeforePhoto ? "Start the timer before marking this job complete." : "Required: open this job and take a before-service photo. Work cannot begin until the property condition is documented."}
+                      </p>
                     )}
                   </div>
                 );
@@ -2629,9 +2725,11 @@ function BusinessView({ onEditRequest, onPrefillEstimate, userRole }) {
                         <button onClick={(e) => { e.stopPropagation(); onEditRequest(item); }} className="text-gray-400" aria-label="Edit estimate">
                           <Pencil size={16} />
                         </button>
+                        {(userRole === "owner" || userRole === "manager") && (
                         <button onClick={(e) => { e.stopPropagation(); deleteEstimateItem(item); }} className="text-gray-400" aria-label="Delete estimate">
                           <Trash2 size={16} />
                         </button>
+                        )}
                         {expandedId === item.timestamp ? <ChevronUp size={16} className="text-gray-400" /> : <ChevronDown size={16} className="text-gray-400" />}
                       </div>
                     </div>
@@ -2677,9 +2775,11 @@ function BusinessView({ onEditRequest, onPrefillEstimate, userRole }) {
                     <button onClick={() => markAgreed(item)} className="text-xs rounded-full px-3 py-1 border border-gray-300 text-gray-600">
                       Changed mind — mark agreed
                     </button>
+                    {(userRole === "owner" || userRole === "manager") && (
                     <button onClick={() => deleteEstimateItem(item)} className="text-gray-400 ml-auto" aria-label="Delete estimate">
                       <Trash2 size={15} />
                     </button>
+                    )}
                   </div>
                 </div>
               ))}
@@ -2784,6 +2884,10 @@ function BusinessView({ onEditRequest, onPrefillEstimate, userRole }) {
               </div>
             </div>
 
+            {pendingDetailItem.status === "completed" && pendingDetailItem.completedBy && (
+              <p className="text-xs text-gray-400 mb-3">Completed by {pendingDetailItem.completedBy}</p>
+            )}
+
             {pendingDetailItem.status === "completed" && userRole === "owner" && (
               <div className="border rounded-lg p-2.5 mb-3 text-xs flex items-center justify-between"
                 style={pendingDetailItem.paymentStatus === "paid"
@@ -2802,22 +2906,29 @@ function BusinessView({ onEditRequest, onPrefillEstimate, userRole }) {
             {(pendingDetailItem.status === "confirmed" || pendingDetailItem.status === "completed") && (
               <div className="border border-gray-200 rounded-lg p-3 mb-3 space-y-2.5">
                 <div>
-                  <p className="text-xs font-medium text-gray-700 mb-1.5">Before photo</p>
+                  <div className="mb-2">
+                    <p className="text-xs font-semibold text-gray-900">Before-service photo <span style={{ color: "var(--warn)" }}>• REQUIRED</span></p>
+                    <p className="text-xs text-gray-500 mt-1">Taken before work begins to document the property's condition and help protect both the customer and the crew. This step cannot be skipped.</p>
+                  </div>
                   {pendingDetailItem.hasBeforePhoto ? (
-                    <div className="flex gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <button onClick={() => viewPhoto(pendingDetailItem, "before")}
-                        className="text-xs rounded-full px-3 py-1.5 border" style={{ borderColor: "var(--accent)", color: "var(--accent)" }}>
-                        View photo
+                        className="text-xs rounded-full px-3 py-1.5 border" style={{ borderColor: "var(--success)", color: "var(--success)" }}>
+                        ✓ View required photo
                       </button>
-                      <label className="text-xs rounded-full px-3 py-1.5 border border-gray-300 text-gray-600 cursor-pointer">
-                        {photoUploading === `before:${pendingDetailItem.timestamp}` ? "Saving…" : "Replace"}
-                        <input type="file" accept="image/*" capture="environment" className="hidden"
-                          onChange={(e) => handlePhotoUpload(pendingDetailItem, e.target.files && e.target.files[0], "before")} />
-                      </label>
+                      {userRole === "owner" ? (
+                        <label className="text-xs rounded-full px-3 py-1.5 border border-gray-300 text-gray-600 cursor-pointer">
+                          {photoUploading === `before:${pendingDetailItem.timestamp}` ? "Saving…" : "Replace"}
+                          <input type="file" accept="image/*" capture="environment" className="hidden"
+                            onChange={(e) => handlePhotoUpload(pendingDetailItem, e.target.files && e.target.files[0], "before")} />
+                        </label>
+                      ) : (
+                        <span className="text-xs text-gray-400">Captured for this service record</span>
+                      )}
                     </div>
                   ) : (
                     <label className="inline-block text-xs rounded-full px-3 py-1.5 border cursor-pointer" style={{ borderColor: "var(--accent)", color: "var(--accent)" }}>
-                      {photoUploading === `before:${pendingDetailItem.timestamp}` ? "Saving…" : "+ Add before photo"}
+                      {photoUploading === `before:${pendingDetailItem.timestamp}` ? "Saving…" : "Take required before photo"}
                       <input type="file" accept="image/*" capture="environment" className="hidden"
                         onChange={(e) => handlePhotoUpload(pendingDetailItem, e.target.files && e.target.files[0], "before")} />
                     </label>
@@ -2869,9 +2980,9 @@ function BusinessView({ onEditRequest, onPrefillEstimate, userRole }) {
                   return (
                     <>
                       {!timerRunningHere && (
-                        <button onClick={() => startTimer(pendingDetailItem)} disabled={!!timerRunningElsewhere}
-                          className="text-xs rounded-full px-3 py-1.5 border" style={{ borderColor: "var(--accent)", color: "var(--accent)", opacity: timerRunningElsewhere ? 0.4 : 1 }}>
-                          Start timer
+                        <button onClick={() => startTimer(pendingDetailItem)} disabled={!!timerRunningElsewhere || !pendingDetailItem.hasBeforePhoto}
+                          className="text-xs rounded-full px-3 py-1.5 border" style={{ borderColor: pendingDetailItem.hasBeforePhoto ? "var(--accent)" : "var(--warn)", color: pendingDetailItem.hasBeforePhoto ? "var(--accent)" : "var(--warn)", opacity: timerRunningElsewhere ? 0.4 : 1 }}>
+                          {pendingDetailItem.hasBeforePhoto ? "Start timer" : "Before photo required"}
                         </button>
                       )}
                       {timerRunningHere && userRole === "owner" && (
@@ -2905,10 +3016,12 @@ function BusinessView({ onEditRequest, onPrefillEstimate, userRole }) {
                 className="text-xs rounded-full px-3 py-1.5 border border-gray-300 text-gray-600">
                 Edit
               </button>
+              {(userRole === "owner" || userRole === "manager") && (
               <button onClick={() => { deleteEstimateItem(pendingDetailItem); closePendingDetail(); }}
                 className="text-gray-400 ml-auto" aria-label="Delete estimate">
                 <Trash2 size={15} />
               </button>
+              )}
             </div>
             <button onClick={closePendingDetail} className="w-full border border-gray-300 rounded-lg py-2 text-sm text-gray-700">
               Close
@@ -3256,7 +3369,7 @@ function BusinessView({ onEditRequest, onPrefillEstimate, userRole }) {
   );
 }
 
-function CustomerDirectoryView({ onEditVisit, initialExpandedPhone, onConsumeInitialExpandedPhone }) {
+function CustomerDirectoryView({ onEditVisit, initialExpandedPhone, onConsumeInitialExpandedPhone, userRole }) {
   const [motivationLine] = useState(() => randomMotivationLine());
   const [history, setHistory] = useState([]);
   const [search, setSearch] = useState("");
@@ -3705,25 +3818,14 @@ function CustomerDirectoryView({ onEditVisit, initialExpandedPhone, onConsumeIni
     setDeletingCustomer(true);
     const phone = deleteConfirmCustomer.phone;
     try {
-      const estimatesTable = await loadTable(TABLE_KEYS.estimates, false);
-      const estimateIdsToDelete = Object.keys(estimatesTable).filter((k) => estimatesTable[k].phone === phone);
-      for (const id of estimateIdsToDelete) {
-        await deleteTableRecord(TABLE_KEYS.estimates, false, id);
+      const res = await fetch(`${API_BASE}/api/customer-profiles/${encodeURIComponent(phone)}`, {
+        method: "DELETE",
+        headers: authHeaders(),
+      });
+      if (!res.ok) {
+        setDeletingCustomer(false);
+        return;
       }
-
-      const apptTable = await loadTable(TABLE_KEYS.appointments, true);
-      const apptIdsToDelete = Object.keys(apptTable).filter((k) => apptTable[k].phone === phone);
-      for (const id of apptIdsToDelete) {
-        await deleteTableRecord(TABLE_KEYS.appointments, true, id);
-      }
-
-      const bookingsTable = await loadTable(TABLE_KEYS.bookings, true);
-      const bookingIdsToDelete = Object.keys(bookingsTable).filter((k) => bookingsTable[k].phone === phone);
-      for (const id of bookingIdsToDelete) {
-        await deleteTableRecord(TABLE_KEYS.bookings, true, id);
-      }
-
-      await deleteTableRecord(TABLE_KEYS.profiles, true, phone);
 
       setHistory((prev) => prev.filter((h) => h.phone !== phone));
       setProfiles((prev) => {
@@ -3751,40 +3853,17 @@ function CustomerDirectoryView({ onEditVisit, initialExpandedPhone, onConsumeIni
   }
 
   async function migrateCustomerPhone(oldPhone, newPhone, newProfileData) {
-    const apptTable = await loadTable(TABLE_KEYS.appointments, true);
-    const migratedNv = [];
-    const newAppts = {};
-    const oldApptIds = [];
-    Object.keys(apptTable).forEach((k) => {
-      if (apptTable[k].phone === oldPhone) {
-        const updated = { ...apptTable[k], phone: newPhone };
-        const newKey = k.replace(`${oldPhone}:`, `${newPhone}:`);
-        oldApptIds.push(k);
-        newAppts[newKey] = updated;
-        migratedNv.push(updated);
-      }
+    const res = await fetch(`${API_BASE}/api/customers/${encodeURIComponent(oldPhone)}/change-phone`, {
+      method: "POST",
+      headers: authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ newPhone, ...newProfileData }),
     });
-    for (const oldId of oldApptIds) {
-      await deleteTableRecord(TABLE_KEYS.appointments, true, oldId);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || "Couldn't change the phone number.");
     }
-    await saveTable(TABLE_KEYS.appointments, true, newAppts);
 
-    const estimatesTable = await loadTable(TABLE_KEYS.estimates, false);
-    const changedEstimates = {};
-    Object.keys(estimatesTable).forEach((k) => {
-      if (estimatesTable[k].phone === oldPhone) changedEstimates[k] = { ...estimatesTable[k], phone: newPhone };
-    });
-    await saveTable(TABLE_KEYS.estimates, false, changedEstimates);
-
-    const bookingsTable = await loadTable(TABLE_KEYS.bookings, true);
-    const changedBookings = {};
-    Object.keys(bookingsTable).forEach((k) => {
-      if (bookingsTable[k].phone === oldPhone) changedBookings[k] = { ...bookingsTable[k], phone: newPhone };
-    });
-    await saveTable(TABLE_KEYS.bookings, true, changedBookings);
-
-    await deleteTableRecord(TABLE_KEYS.profiles, true, oldPhone);
-    await setTableRecord(TABLE_KEYS.profiles, true, newPhone, newProfileData);
+    const migratedNv = (nextVisits[oldPhone] || []).map((nv) => ({ ...nv, phone: newPhone }));
 
     setProfiles((prev) => {
       const next = { ...prev };
@@ -3837,7 +3916,7 @@ function CustomerDirectoryView({ onEditVisit, initialExpandedPhone, onConsumeIni
       }
       setEditingProfilePhone(null);
     } catch (e) {
-      setPhoneChangeError("Something went wrong saving — try again.");
+      setPhoneChangeError(e.message || "Something went wrong saving — try again.");
     } finally {
       setProfileSaving(false);
     }
@@ -3951,9 +4030,11 @@ function CustomerDirectoryView({ onEditVisit, initialExpandedPhone, onConsumeIni
                     <label className="block text-xs text-gray-500 mb-1">Name</label>
                     <input type="text" value={editName} onChange={(e) => setEditName(e.target.value)}
                       className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm mb-2" />
-                    <label className="block text-xs text-gray-500 mb-1">Phone</label>
+                    <label className="block text-xs text-gray-500 mb-1">Phone{(userRole !== "owner" && userRole !== "manager") ? " (owner/manager only)" : ""}</label>
                     <input type="tel" value={editPhone} onChange={(e) => setEditPhone(e.target.value)}
-                      className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm mb-2" />
+                      readOnly={userRole !== "owner" && userRole !== "manager"}
+                      className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm mb-2"
+                      style={(userRole !== "owner" && userRole !== "manager") ? { backgroundColor: "var(--surface-alt)", color: "var(--text-muted)" } : undefined} />
                     <label className="block text-xs text-gray-500 mb-1">Address</label>
                     <input type="text" value={editAddress} onChange={(e) => setEditAddress(e.target.value)}
                       className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm mb-2" />
@@ -4262,10 +4343,12 @@ function CustomerDirectoryView({ onEditVisit, initialExpandedPhone, onConsumeIni
                       )}
                   </div>
 
-                  <button onClick={(e) => { e.stopPropagation(); requestDeleteCustomer(c); }}
-                    className="text-xs text-red-600 underline">
-                    Delete customer
-                  </button>
+                  {(userRole === "owner" || userRole === "manager") && (
+                    <button onClick={(e) => { e.stopPropagation(); requestDeleteCustomer(c); }}
+                      className="text-xs text-red-600 underline">
+                      Delete customer
+                    </button>
+                  )}
 
                   </div>
                 )}
@@ -4703,6 +4786,7 @@ function PriceSheetView() {
       </div>
 
       <div className="px-4 py-4 space-y-6">
+        {error && <p className="text-xs text-red-600 border border-red-200 rounded-lg p-2">{error}</p>}
         <section>
           <h2 className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: "var(--accent)" }}>
             Mowing — Recurring vs. One-Time
@@ -5039,6 +5123,8 @@ function ExpensesView() {
       ["timeLogs", TABLE_KEYS.timeLogs, false],
       ["expenses", TABLE_KEYS.expenses, false],
       ["inventoryItems", TABLE_KEYS.inventoryItems, false],
+      ["bugReports", TABLE_KEYS.bugReports, false],
+      ["crewSchedules", TABLE_KEYS.crewSchedules, false],
     ];
     const data = {};
     try {
@@ -5056,6 +5142,13 @@ function ExpensesView() {
         data.availability = d && d.template ? d.template : null;
       } catch (e) {
         data.availability = null;
+      }
+      try {
+        const res = await fetch(`${API_BASE}/api/site-content`);
+        const d = res.ok ? await res.json() : null;
+        data.siteContent = d && d.content ? d.content : null;
+      } catch (e) {
+        data.siteContent = null;
       }
       data.exportedAt = new Date().toISOString();
       data.business = "R-DUB's Lawn Care";
@@ -5078,6 +5171,8 @@ function ExpensesView() {
     { label: "timeLogs", displayName: "Time logs", tableKey: TABLE_KEYS.timeLogs, shared: false, recordId: (item) => String(item.timestamp) },
     { label: "expenses", displayName: "Expenses", tableKey: TABLE_KEYS.expenses, shared: false, recordId: (item) => String(item.timestamp) },
     { label: "inventoryItems", displayName: "Inventory items", tableKey: TABLE_KEYS.inventoryItems, shared: false, recordId: (item) => item.id },
+    { label: "bugReports", displayName: "Bug reports", tableKey: TABLE_KEYS.bugReports, shared: false, recordId: (item) => item.id },
+    { label: "crewSchedules", displayName: "Crew schedules", tableKey: TABLE_KEYS.crewSchedules, shared: false, recordId: (item) => item.username },
   ];
 
   function handleImportFileSelect(e) {
@@ -5131,6 +5226,15 @@ function ExpensesView() {
             method: "POST",
             headers: authHeaders({ "Content-Type": "application/json" }),
             body: JSON.stringify({ template: importPreview.data.availability }),
+          });
+        } catch (e) {}
+      }
+      if (importPreview.data.siteContent) {
+        try {
+          await fetch(`${API_BASE}/api/site-content`, {
+            method: "POST",
+            headers: authHeaders({ "Content-Type": "application/json" }),
+            body: JSON.stringify({ content: importPreview.data.siteContent }),
           });
         } catch (e) {}
       }
@@ -5696,6 +5800,619 @@ function BugReportsView({ userRole, currentUsername }) {
   );
 }
 
+const ONBOARD_WORDS = ["river", "maple", "cedar", "birch", "clover", "meadow", "willow", "acorn", "harbor", "ridge", "pine", "hollow"];
+function generateOnboardPassword() {
+  const w1 = ONBOARD_WORDS[Math.floor(Math.random() * ONBOARD_WORDS.length)];
+  const w2 = ONBOARD_WORDS[Math.floor(Math.random() * ONBOARD_WORDS.length)];
+  const num = Math.floor(100 + Math.random() * 900);
+  return `${w1}-${w2}-${num}`;
+}
+
+function TeamView({ authToken, currentUsername }) {
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [newName, setNewName] = useState("");
+  const [newUsername, setNewUsername] = useState("");
+  const [newRole, setNewRole] = useState("crew");
+  const [newPassword, setNewPassword] = useState(() => generateOnboardPassword());
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState("");
+  const [justCreated, setJustCreated] = useState(null);
+  const [removeConfirm, setRemoveConfirm] = useState(null);
+  const [copied, setCopied] = useState(false);
+  const [pausingUsername, setPausingUsername] = useState(null);
+  const [resetTarget, setResetTarget] = useState(null);
+  const [resetPassword, setResetPassword] = useState("");
+  const [resetting, setResetting] = useState(false);
+  const [resetDone, setResetDone] = useState(null);
+  const [deletedCustomers, setDeletedCustomers] = useState([]);
+  const [deletedLoading, setDeletedLoading] = useState(true);
+  const [restoringId, setRestoringId] = useState(null);
+  const [restoredIds, setRestoredIds] = useState({});
+
+  async function loadUsers() {
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/auth/users`, { headers: authHeaders() });
+      if (res.ok) {
+        const data = await res.json();
+        setUsers(data.users || []);
+      }
+    } catch (e) {}
+    setLoading(false);
+  }
+
+  useEffect(() => { loadUsers(); loadDeletedCustomers(); }, []);
+
+  async function loadDeletedCustomers() {
+    setDeletedLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/deleted-customers`, { headers: authHeaders() });
+      if (res.ok) {
+        const data = await res.json();
+        setDeletedCustomers(data.deletedCustomers || []);
+      }
+    } catch (e) {}
+    setDeletedLoading(false);
+  }
+
+  async function restoreCustomer(entry) {
+    setRestoringId(entry.id);
+    try {
+      const res = await fetch(`${API_BASE}/api/deleted-customers/${encodeURIComponent(entry.id)}/restore`, {
+        method: "POST",
+        headers: authHeaders({ "Content-Type": "application/json" }),
+      });
+      if (res.ok) setRestoredIds((prev) => ({ ...prev, [entry.id]: true }));
+    } catch (e) {}
+    setRestoringId(null);
+  }
+
+  async function togglePause(username, currentlyDisabled) {
+    setPausingUsername(username);
+    setUsers((prev) => prev.map((u) => (u.username === username ? { ...u, disabled: currentlyDisabled ? 0 : 1 } : u)));
+    try {
+      await fetch(`${API_BASE}/api/auth/users/${encodeURIComponent(username)}/pause`, {
+        method: "POST",
+        headers: authHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ disabled: !currentlyDisabled }),
+      });
+    } catch (e) {}
+    setPausingUsername(null);
+  }
+
+  function startReset(username) {
+    setResetTarget(username);
+    setResetPassword(generateOnboardPassword());
+    setResetDone(null);
+  }
+
+  async function submitReset() {
+    setResetting(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/auth/users/${encodeURIComponent(resetTarget)}/reset-password`, {
+        method: "POST",
+        headers: authHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ newPassword: resetPassword }),
+      });
+      if (res.ok) {
+        setResetDone({ username: resetTarget, password: resetPassword });
+        setResetTarget(null);
+      }
+    } catch (e) {}
+    setResetting(false);
+  }
+
+  async function createUser() {
+    if (!newUsername.trim()) {
+      setCreateError("Enter a username.");
+      return;
+    }
+    setCreating(true);
+    setCreateError("");
+    try {
+      const res = await fetch(`${API_BASE}/api/auth/invite`, {
+        method: "POST",
+        headers: authHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ username: newUsername.trim(), password: newPassword, name: newName.trim(), role: newRole }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setCreateError(data.error || "Couldn't create the login.");
+        setCreating(false);
+        return;
+      }
+      setJustCreated({ username: newUsername.trim(), password: newPassword, name: newName.trim(), role: newRole });
+      setNewName("");
+      setNewUsername("");
+      setNewRole("crew");
+      setNewPassword(generateOnboardPassword());
+      await loadUsers();
+    } catch (e) {
+      setCreateError("Couldn't reach the server — try again.");
+    }
+    setCreating(false);
+  }
+
+  async function removeUser(username) {
+    setRemoveConfirm(null);
+    setUsers((prev) => prev.filter((u) => u.username !== username));
+    try {
+      await fetch(`${API_BASE}/api/auth/users/${encodeURIComponent(username)}`, {
+        method: "DELETE",
+        headers: authHeaders(),
+      });
+    } catch (e) {}
+  }
+
+  function copyCredentials() {
+    if (!justCreated) return;
+    const text = `R-DUB's Lawn Care login\nUsername: ${justCreated.username}\nPassword: ${justCreated.password}`;
+    copyText(text, () => { setCopied(true); setTimeout(() => setCopied(false), 2000); });
+  }
+
+  return (
+    <div className="pb-8">
+      <div className="px-4 pt-5 pb-4 border-b border-gray-200 flex items-center gap-3">
+        <Badge />
+        <div>
+          <p className="text-base font-medium text-gray-900">R-DUB's Lawn Care</p>
+          <p className="text-sm" style={{ color: "var(--accent)" }}>Team Logins</p>
+        </div>
+      </div>
+
+      <div className="px-4 py-4 space-y-5">
+        {justCreated && (
+          <div className="border rounded-lg p-3 text-xs" style={{ borderColor: "var(--success)", backgroundColor: "#ECFDF5" }}>
+            <p className="font-medium text-gray-800 mb-1">{justCreated.role === "manager" ? "Manager" : "Crew"} login created — share these with {justCreated.name || justCreated.username} now.</p>
+            <p className="text-gray-600">This password won't be shown again after you leave this screen.</p>
+            <div className="bg-white border border-gray-200 rounded-md p-2 mt-2 font-mono text-gray-800">
+              <div>Username: {justCreated.username}</div>
+              <div>Password: {justCreated.password}</div>
+            </div>
+            <button onClick={copyCredentials} className="w-full rounded-lg py-2 text-xs font-medium mt-2 text-white" style={{ backgroundColor: ACCENT_HEX }}>
+              {copied ? "Copied!" : "Copy to share"}
+            </button>
+            <button onClick={() => setJustCreated(null)} className="w-full text-center text-gray-400 mt-2">Done</button>
+          </div>
+        )}
+
+        {!justCreated && (
+          <section>
+            <h2 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--accent)" }}>Add a Team Member</h2>
+            <label className="block text-xs text-gray-500 mb-1">Name</label>
+            <input type="text" value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="e.g. Mike"
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm mb-3" />
+            <label className="block text-xs text-gray-500 mb-1">Username</label>
+            <input type="text" value={newUsername} onChange={(e) => setNewUsername(e.target.value)} placeholder="e.g. mike"
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm mb-3" autoCapitalize="none" autoCorrect="off" />
+            <label className="block text-xs text-gray-500 mb-1">Role</label>
+            <div className="flex gap-2 mb-3">
+              <button onClick={() => setNewRole("crew")}
+                className="flex-1 rounded-lg py-2 text-xs font-medium border"
+                style={newRole === "crew" ? { borderColor: "var(--accent)", backgroundColor: "var(--surface-alt)", color: "var(--accent)" } : { borderColor: "#D1D5DB", color: "#6B7280" }}>
+                Crew
+              </button>
+              <button onClick={() => setNewRole("manager")}
+                className="flex-1 rounded-lg py-2 text-xs font-medium border"
+                style={newRole === "manager" ? { borderColor: "var(--accent)", backgroundColor: "var(--surface-alt)", color: "var(--accent)" } : { borderColor: "#D1D5DB", color: "#6B7280" }}>
+                Manager
+              </button>
+            </div>
+            <label className="block text-xs text-gray-500 mb-1">Password (generated for you)</label>
+            <div className="flex items-center gap-2">
+              <input type="text" value={newPassword} readOnly className="flex-1 border border-gray-300 rounded-md px-3 py-2 text-sm font-mono bg-gray-50" />
+              <button onClick={() => setNewPassword(generateOnboardPassword())} className="text-xs px-2 py-2 border border-gray-300 rounded-md text-gray-500">New</button>
+            </div>
+            {createError && <p className="text-xs mt-2" style={{ color: "var(--warn)" }}>{createError}</p>}
+            <button onClick={createUser} disabled={creating || !newUsername.trim()}
+              className="w-full rounded-lg py-2.5 text-sm text-white font-medium mt-3"
+              style={{ backgroundColor: ACCENT_HEX, opacity: creating || !newUsername.trim() ? 0.6 : 1 }}>
+              {creating ? "Creating…" : "Create Login"}
+            </button>
+            <p className="text-xs text-gray-400 mt-2">
+              {newRole === "manager"
+                ? "Managers can delete customers, change phone numbers, override prices, and bulk-reschedule — but still won't see Books, payment status, or team/website settings."
+                : "Crew accounts won't see Books or payment status, and can't delete customers, change phone numbers, or override locked prices."}
+            </p>
+          </section>
+        )}
+
+        <section>
+          <h2 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--accent)" }}>Who Has Access</h2>
+          {loading ? (
+            <p className="text-xs text-gray-400">Loading…</p>
+          ) : (
+            <div className="space-y-2">
+              {users.map((u) => (
+                <div key={u.username} className="border border-gray-200 rounded-lg p-3 text-xs">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-medium text-gray-800">
+                        {u.name || u.username}
+                        {!!u.disabled && <span className="ml-2 text-xs font-normal px-1.5 py-0.5 rounded" style={{ backgroundColor: "#FEF3C7", color: "#92400E" }}>Paused</span>}
+                      </p>
+                      <p className="text-gray-400">{u.username} · {u.role === "owner" ? "Owner" : u.role === "manager" ? "Manager" : "Crew"}</p>
+                    </div>
+                    {u.username !== currentUsername && u.role !== "owner" && (
+                      removeConfirm === u.username ? (
+                        <div className="flex items-center gap-2">
+                          <button onClick={() => removeUser(u.username)} className="text-white rounded px-2 py-1" style={{ backgroundColor: "#DC2626" }}>Remove</button>
+                          <button onClick={() => setRemoveConfirm(null)} className="text-gray-400">Cancel</button>
+                        </div>
+                      ) : (
+                        <button onClick={() => setRemoveConfirm(u.username)} className="text-gray-400"><Trash2 size={14} /></button>
+                      )
+                    )}
+                  </div>
+                  {u.username !== currentUsername && u.role !== "owner" && (
+                    <button onClick={() => togglePause(u.username, u.disabled)} disabled={pausingUsername === u.username}
+                      className="w-full mt-2 rounded-md py-1.5 text-xs font-medium border"
+                      style={u.disabled
+                        ? { borderColor: "var(--success)", color: "var(--success)" }
+                        : { borderColor: "var(--warn)", color: "#92400E" }}>
+                      {pausingUsername === u.username ? "…" : u.disabled ? "Resume access" : "Pause access instantly"}
+                    </button>
+                  )}
+                  {u.username !== currentUsername && u.role !== "owner" && resetTarget !== u.username && (
+                    <button onClick={() => startReset(u.username)}
+                      className="w-full mt-1.5 rounded-md py-1.5 text-xs font-medium border border-gray-300 text-gray-600">
+                      Reset password
+                    </button>
+                  )}
+                  {resetTarget === u.username && (
+                    <div className="mt-2 border border-gray-200 rounded-lg p-2.5 bg-gray-50">
+                      <p className="text-gray-600 mb-1.5">New password for {u.name || u.username}:</p>
+                      <div className="flex items-center gap-2 mb-2">
+                        <input type="text" value={resetPassword} readOnly className="flex-1 border border-gray-300 rounded-md px-2 py-1.5 text-sm font-mono bg-white" />
+                        <button onClick={() => setResetPassword(generateOnboardPassword())} className="text-xs px-2 py-1.5 border border-gray-300 rounded-md text-gray-500">New</button>
+                      </div>
+                      <div className="flex gap-2">
+                        <button onClick={() => setResetTarget(null)} className="flex-1 border border-gray-300 rounded-lg py-1.5 text-gray-700">Cancel</button>
+                        <button onClick={submitReset} disabled={resetting} className="flex-1 rounded-lg py-1.5 text-white" style={{ backgroundColor: ACCENT_HEX, opacity: resetting ? 0.7 : 1 }}>
+                          {resetting ? "…" : "Confirm Reset"}
+                        </button>
+                      </div>
+                      <p className="text-gray-400 mt-1.5">This signs them out everywhere — share the new password before they try logging in again.</p>
+                    </div>
+                  )}
+                  {resetDone && resetDone.username === u.username && (
+                    <div className="mt-2 border rounded-lg p-2.5" style={{ borderColor: "var(--success)", backgroundColor: "#ECFDF5" }}>
+                      <p className="text-gray-700">Password reset. New password: <span className="font-mono">{resetDone.password}</span></p>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        <section>
+          <h2 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--accent)" }}>Recently Deleted Customers</h2>
+          <p className="text-xs text-gray-400 mb-2">If a customer was deleted by mistake — or by someone who shouldn't have — restore them here.</p>
+          {deletedLoading ? (
+            <p className="text-xs text-gray-400">Loading…</p>
+          ) : deletedCustomers.length === 0 ? (
+            <p className="text-xs text-gray-400">Nothing deleted recently.</p>
+          ) : (
+            <div className="space-y-2">
+              {deletedCustomers.map((d) => {
+                const profile = d.profile_snapshot ? JSON.parse(d.profile_snapshot) : null;
+                const isRestored = d.restored || restoredIds[d.id];
+                return (
+                  <div key={d.id} className="border border-gray-200 rounded-lg p-3 text-xs flex items-center justify-between">
+                    <div>
+                      <p className="font-medium text-gray-800">{profile ? profile.name || d.phone : d.phone}</p>
+                      <p className="text-gray-400">
+                        Deleted by {d.deleted_by} ({d.deleted_by_role}) · {new Date(d.deleted_at).toLocaleDateString()}
+                      </p>
+                    </div>
+                    {isRestored ? (
+                      <span className="text-gray-400">Restored</span>
+                    ) : (
+                      <button onClick={() => restoreCustomer(d)} disabled={restoringId === d.id}
+                        className="rounded-md px-3 py-1.5 text-xs font-medium text-white" style={{ backgroundColor: ACCENT_HEX }}>
+                        {restoringId === d.id ? "Restoring…" : "Restore"}
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      </div>
+    </div>
+  );
+}
+
+const SCHEDULE_DAYS = [
+  { key: "mon", label: "Mon" }, { key: "tue", label: "Tue" }, { key: "wed", label: "Wed" },
+  { key: "thu", label: "Thu" }, { key: "fri", label: "Fri" }, { key: "sat", label: "Sat" }, { key: "sun", label: "Sun" },
+];
+
+function CrewScheduleView({ userRole }) {
+  const [schedules, setSchedules] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [editingUsername, setEditingUsername] = useState(null);
+  const [draft, setDraft] = useState({});
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  async function loadSchedules() {
+    setLoading(true);
+    const table = await loadTable(TABLE_KEYS.crewSchedules, false);
+    setSchedules(Object.values(table));
+    setLoading(false);
+  }
+
+  useEffect(() => { loadSchedules(); }, []);
+
+  function startEdit(person) {
+    setEditingUsername(person.username);
+    const base = {};
+    SCHEDULE_DAYS.forEach((d) => {
+      base[d.key] = person.schedule[d.key] || { working: false, start: "08:00", end: "16:00" };
+    });
+    setDraft(base);
+  }
+
+  function toggleDay(dayKey) {
+    setDraft((prev) => ({ ...prev, [dayKey]: { ...prev[dayKey], working: !prev[dayKey].working } }));
+  }
+
+  function setDayTime(dayKey, field, value) {
+    setDraft((prev) => ({ ...prev, [dayKey]: { ...prev[dayKey], [field]: value } }));
+  }
+
+  async function saveSchedule() {
+    setSaving(true);
+    setError("");
+    try {
+      const res = await fetch(`${API_BASE}/api/crew-schedules/${encodeURIComponent(editingUsername)}`, {
+        method: "POST",
+        headers: authHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ schedule: draft }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Couldn't save the schedule.");
+      setEditingUsername(null);
+      await loadSchedules();
+    } catch (e) {
+      setError(e.message || "Couldn't save the schedule.");
+    }
+    setSaving(false);
+  }
+
+  function workingDaysSummary(schedule) {
+    const working = SCHEDULE_DAYS.filter((d) => schedule[d.key] && schedule[d.key].working);
+    if (working.length === 0) return "No days set";
+    return working.map((d) => d.label).join(", ");
+  }
+
+  return (
+    <div className="pb-8">
+      <div className="px-4 pt-5 pb-4 border-b border-gray-200 flex items-center gap-3">
+        <Badge />
+        <div>
+          <p className="text-base font-medium text-gray-900">R-DUB's Lawn Care</p>
+          <p className="text-sm" style={{ color: "var(--accent)" }}>Crew Schedule</p>
+        </div>
+      </div>
+
+      <div className="px-4 py-4 space-y-3">
+        {error && <p className="text-xs text-red-600 border border-red-200 rounded-lg p-2">{error}</p>}
+        {loading ? (
+          <p className="text-xs text-gray-400">Loading…</p>
+        ) : (
+          schedules.map((person) => (
+            <div key={person.username} className="border border-gray-200 rounded-lg p-3 text-xs">
+              {editingUsername === person.username ? (
+                <div>
+                  <p className="font-medium text-gray-800 mb-2">{person.name || person.username}</p>
+                  <div className="space-y-1.5">
+                    {SCHEDULE_DAYS.map((d) => (
+                      <div key={d.key} className="flex items-center gap-2">
+                        <label className="flex items-center gap-1.5 w-14 shrink-0">
+                          <input type="checkbox" checked={draft[d.key].working} onChange={() => toggleDay(d.key)}
+                            style={{ accentColor: "var(--accent)", touchAction: "pan-y" }} />
+                          {d.label}
+                        </label>
+                        {draft[d.key].working && (
+                          <>
+                            <input type="time" value={draft[d.key].start} onChange={(e) => setDayTime(d.key, "start", e.target.value)}
+                              className="border border-gray-300 rounded px-1.5 py-1 text-xs flex-1" />
+                            <span className="text-gray-400">–</span>
+                            <input type="time" value={draft[d.key].end} onChange={(e) => setDayTime(d.key, "end", e.target.value)}
+                              className="border border-gray-300 rounded px-1.5 py-1 text-xs flex-1" />
+                          </>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex gap-2 mt-3">
+                    <button onClick={() => setEditingUsername(null)} className="flex-1 border border-gray-300 rounded-lg py-1.5 text-gray-700">Cancel</button>
+                    <button onClick={saveSchedule} disabled={saving} className="flex-1 rounded-lg py-1.5 text-white" style={{ backgroundColor: ACCENT_HEX, opacity: saving ? 0.7 : 1 }}>
+                      {saving ? "Saving…" : "Save"}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-medium text-gray-800">{person.name || person.username}<span className="ml-1.5 text-gray-400 font-normal">· {person.role === "owner" ? "Owner" : "Crew"}</span></p>
+                    <p className="text-gray-400 mt-0.5">{workingDaysSummary(person.schedule)}</p>
+                  </div>
+                  {userRole === "owner" && (
+                    <button onClick={() => startEdit(person)} className="text-gray-400"><Pencil size={14} /></button>
+                  )}
+                </div>
+              )}
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+function WebsiteSettingsView() {
+  const [content, setContent] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [savingSection, setSavingSection] = useState(null);
+  const [savedSection, setSavedSection] = useState(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/site-content`);
+        const data = await res.json();
+        setContent(data.content || {});
+      } catch (e) {
+        setContent({});
+      }
+      setLoading(false);
+    })();
+  }, []);
+
+  function updateField(key, value) {
+    setContent((prev) => ({ ...prev, [key]: value }));
+  }
+
+  async function saveSection(sectionId, keys) {
+    setSavingSection(sectionId);
+    const patch = {};
+    keys.forEach((k) => { patch[k] = content[k]; });
+    setError("");
+    try {
+      const res = await fetch(`${API_BASE}/api/site-content`, {
+        method: "POST",
+        headers: authHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ content: patch }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Couldn't save website settings.");
+      setSavedSection(sectionId);
+      setTimeout(() => setSavedSection(null), 2500);
+    } catch (e) {
+      setError(e.message || "Couldn't save website settings.");
+    }
+    setSavingSection(null);
+  }
+
+  function SaveButton({ sectionId, keys }) {
+    return (
+      <button onClick={() => saveSection(sectionId, keys)} disabled={savingSection === sectionId}
+        className="rounded-lg px-4 py-1.5 text-xs font-medium text-white mt-2"
+        style={{ backgroundColor: ACCENT_HEX, opacity: savingSection === sectionId ? 0.7 : 1 }}>
+        {savingSection === sectionId ? "Saving…" : savedSection === sectionId ? "Saved ✓" : "Save"}
+      </button>
+    );
+  }
+
+  if (loading || !content) {
+    return (
+      <div className="pb-8 px-4 pt-5">
+        <p className="text-xs text-gray-400">Loading…</p>
+      </div>
+    );
+  }
+
+  const PRICE_FIELDS = [
+    { key: "priceSmallRecurring", label: "Small lot • recurring" },
+    { key: "priceMediumRecurring", label: "Medium lot • recurring" },
+    { key: "priceLargeRecurring", label: "Large lot • recurring" },
+    { key: "priceLeafBlowout", label: "Fall leaf blow-out" },
+    { key: "priceSpringCleanup", label: "Spring cleanup" },
+    { key: "priceMulchRefresh", label: "Mulch refresh" },
+    { key: "priceBedEdging", label: "Bed edging & shaping" },
+    { key: "priceShrubTrim", label: "Shrub / hedge trim" },
+  ];
+
+  const FAQ_FIELDS = [
+    { key: "faq1Answer", q: "Do I need to be home for service?" },
+    { key: "faq2Answer", q: "What happens if it rains?" },
+    { key: "faq3Answer", q: "How does recurring mowing work?" },
+    { key: "faq4Answer", q: "Can I change or skip a visit?" },
+    { key: "faq5Answer", q: "How do I get my customer history?" },
+  ];
+
+  return (
+    <div className="pb-8">
+      <div className="px-4 pt-5 pb-4 border-b border-gray-200 flex items-center gap-3">
+        <Badge />
+        <div>
+          <p className="text-base font-medium text-gray-900">R-DUB's Lawn Care</p>
+          <p className="text-sm" style={{ color: "var(--accent)" }}>Website Settings</p>
+        </div>
+      </div>
+
+      <div className="px-4 py-4 space-y-6">
+        <section>
+          <h2 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--accent)" }}>Launch Mode</h2>
+          <p className="text-xs text-gray-500 mb-2">Preview mode shows the "2027 Launch Preview" badge and interest-list wording. Live mode removes all of that and shows real "Request a Quote" wording site-wide.</p>
+          <div className="flex gap-2">
+            <button onClick={() => updateField("launchMode", "preview")}
+              className="flex-1 rounded-lg py-2 text-xs font-medium border"
+              style={content.launchMode !== "live" ? { borderColor: "var(--accent)", backgroundColor: "var(--surface-alt)", color: "var(--accent)" } : { borderColor: "#D1D5DB", color: "#6B7280" }}>
+              Preview
+            </button>
+            <button onClick={() => updateField("launchMode", "live")}
+              className="flex-1 rounded-lg py-2 text-xs font-medium border"
+              style={content.launchMode === "live" ? { borderColor: "var(--success)", backgroundColor: "#ECFDF5", color: "var(--success)" } : { borderColor: "#D1D5DB", color: "#6B7280" }}>
+              Live
+            </button>
+          </div>
+          <SaveButton sectionId="launch" keys={["launchMode"]} />
+        </section>
+
+        <section>
+          <h2 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--accent)" }}>Headline</h2>
+          <label className="block text-xs text-gray-500 mb-1">Line 1</label>
+          <input type="text" value={content.heroLine1 || ""} onChange={(e) => updateField("heroLine1", e.target.value)}
+            className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm mb-2" />
+          <label className="block text-xs text-gray-500 mb-1">Line 2 (shown in purple)</label>
+          <input type="text" value={content.heroLine2 || ""} onChange={(e) => updateField("heroLine2", e.target.value)}
+            className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm mb-2" />
+          <label className="block text-xs text-gray-500 mb-1">Subheading</label>
+          <textarea value={content.heroLead || ""} onChange={(e) => updateField("heroLead", e.target.value)} rows={2}
+            className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm" />
+          <SaveButton sectionId="headline" keys={["heroLine1", "heroLine2", "heroLead"]} />
+        </section>
+
+        <section>
+          <h2 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--accent)" }}>Pricing</h2>
+          <div className="space-y-2">
+            {PRICE_FIELDS.map((f) => (
+              <div key={f.key} className="flex items-center gap-2">
+                <span className="text-xs text-gray-500 flex-1">{f.label}</span>
+                <input type="text" value={content[f.key] || ""} onChange={(e) => updateField(f.key, e.target.value)}
+                  className="w-28 border border-gray-300 rounded-md px-2 py-1 text-sm text-right" />
+              </div>
+            ))}
+          </div>
+          <SaveButton sectionId="pricing" keys={PRICE_FIELDS.map((f) => f.key)} />
+        </section>
+
+        <section>
+          <h2 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--accent)" }}>FAQ Answers</h2>
+          <div className="space-y-3">
+            {FAQ_FIELDS.map((f) => (
+              <div key={f.key}>
+                <label className="block text-xs font-medium text-gray-700 mb-1">{f.q}</label>
+                <textarea value={content[f.key] || ""} onChange={(e) => updateField(f.key, e.target.value)} rows={2}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm" />
+              </div>
+            ))}
+          </div>
+          <SaveButton sectionId="faq" keys={FAQ_FIELDS.map((f) => f.key)} />
+        </section>
+      </div>
+    </div>
+  );
+}
+
 function TimeClockView({ authUser }) {
   const [status, setStatus] = useState(null);
   const [entries, setEntries] = useState([]);
@@ -5717,6 +6434,13 @@ function TimeClockView({ authUser }) {
     return () => clearInterval(id);
   }, [status && status.activeEntry && status.activeEntry.id]);
 
+  async function api(path, options) {
+    const res = await fetch(`${API_BASE}${path}`, { ...(options || {}), headers: authHeaders((options && options.headers) || {}) });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || "Time clock request failed.");
+    return data;
+  }
+
   function normalizeTimeEntry(entry) {
     if (!entry) return null;
     return {
@@ -5731,16 +6455,6 @@ function TimeClockView({ authUser }) {
       editedBy: entry.editedBy ?? entry.edited_by,
       editReason: entry.editReason ?? entry.edit_reason,
     };
-  }
-
-  async function api(path, options) {
-    const res = await fetch(`${API_BASE}${path}`, { ...(options || {}), headers: authHeaders((options && options.headers) || {}) });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || "Time clock request failed.");
-    if (data.activeEntry) data.activeEntry = normalizeTimeEntry(data.activeEntry);
-    if (Array.isArray(data.entries)) data.entries = data.entries.map(normalizeTimeEntry);
-    if (Array.isArray(data.active)) data.active = data.active.map(normalizeTimeEntry);
-    return data;
   }
 
   function localWeekStartMs() {
@@ -5760,10 +6474,14 @@ function TimeClockView({ authUser }) {
         api("/api/time-clock/me?limit=50"),
         isOwner ? api("/api/time-clock/team?limit=100") : Promise.resolve({ entries: [], active: [] }),
       ]);
-      setStatus(statusData);
-      setEntries(mineData.entries || []);
-      setTeam(isOwner ? (teamData.entries || []) : []);
-      if (isOwner) setStatus((prev) => ({ ...(prev || statusData), teamActive: teamData.active || [] }));
+      const normalizedStatus = {
+        ...statusData,
+        activeEntry: normalizeTimeEntry(statusData.activeEntry),
+      };
+      setStatus(normalizedStatus);
+      setEntries((mineData.entries || []).map(normalizeTimeEntry));
+      setTeam(isOwner ? (teamData.entries || []).map(normalizeTimeEntry) : []);
+      if (isOwner) setStatus((prev) => ({ ...(prev || normalizedStatus), teamActive: (teamData.active || []).map(normalizeTimeEntry) }));
       setNow(Date.now());
     } catch (e) {
       setError(e.message || "Couldn't load the time clock.");
@@ -5873,6 +6591,85 @@ function TimeClockView({ authUser }) {
   );
 }
 
+function ChangePasswordView() {
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState(false);
+
+  async function submit() {
+    setError("");
+    if (!currentPassword || !newPassword) {
+      setError("Fill in both your current and new password.");
+      return;
+    }
+    if (newPassword.length < 8) {
+      setError("New password must be at least 8 characters.");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setError("New passwords don't match.");
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/auth/change-password`, {
+        method: "POST",
+        headers: authHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ currentPassword, newPassword }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || "Couldn't change your password.");
+        setSaving(false);
+        return;
+      }
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      setSuccess(true);
+      setTimeout(() => setSuccess(false), 3000);
+    } catch (e) {
+      setError("Couldn't reach the server — try again.");
+    }
+    setSaving(false);
+  }
+
+  return (
+    <div className="pb-8">
+      <div className="px-4 pt-5 pb-4 border-b border-gray-200 flex items-center gap-3">
+        <Badge />
+        <div>
+          <p className="text-base font-medium text-gray-900">R-DUB's Lawn Care</p>
+          <p className="text-sm" style={{ color: "var(--accent)" }}>Change Password</p>
+        </div>
+      </div>
+
+      <div className="px-4 py-4 space-y-3">
+        <label className="block text-xs text-gray-500 mb-1">Current password</label>
+        <input type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)}
+          className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm mb-3" />
+        <label className="block text-xs text-gray-500 mb-1">New password</label>
+        <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)}
+          className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm mb-3" />
+        <label className="block text-xs text-gray-500 mb-1">Confirm new password</label>
+        <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)}
+          className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm" />
+        {error && <p className="text-xs mt-2" style={{ color: "var(--warn)" }}>{error}</p>}
+        {success && <p className="text-xs mt-2" style={{ color: "var(--success)" }}>Password changed.</p>}
+        <button onClick={submit} disabled={saving}
+          className="w-full rounded-lg py-2.5 text-sm text-white font-medium mt-3"
+          style={{ backgroundColor: ACCENT_HEX, opacity: saving ? 0.7 : 1 }}>
+          {saving ? "Saving…" : "Change Password"}
+        </button>
+        <p className="text-xs text-gray-400 mt-2">Locked out and don't know your current password? Ask the owner to reset it for you from Team Logins.</p>
+      </div>
+    </div>
+  );
+}
+
 function App() {
   const [mode, setMode] = useState("business");
   const [editRequest, setEditRequest] = useState(null);
@@ -5881,11 +6678,15 @@ function App() {
   const [booksDrawerOpen, setBooksDrawerOpen] = useState(false);
   const [pricesDrawerOpen, setPricesDrawerOpen] = useState(false);
   const [bugsDrawerOpen, setBugsDrawerOpen] = useState(false);
+  const [teamDrawerOpen, setTeamDrawerOpen] = useState(false);
+  const [scheduleDrawerOpen, setScheduleDrawerOpen] = useState(false);
   const [timeClockDrawerOpen, setTimeClockDrawerOpen] = useState(false);
+  const [websiteDrawerOpen, setWebsiteDrawerOpen] = useState(false);
+  const [passwordDrawerOpen, setPasswordDrawerOpen] = useState(false);
   const [returnToDirectoryPhone, setReturnToDirectoryPhone] = useState(null);
   const [directoryReopenPhone, setDirectoryReopenPhone] = useState(null);
   const [bottomTabOrder, setBottomTabOrder] = useState(["newcustomer", "business"]);
-  const [utilityOrder, setUtilityOrder] = useState(["timeclock", "prices", "directory", "books", "bugs", "darkmode", "logout"]);
+  const [utilityOrder, setUtilityOrder] = useState(["timeclock", "prices", "directory", "books", "bugs", "team", "schedule", "website", "password", "darkmode", "logout"]);
   const [layoutEditMode, setLayoutEditMode] = useState(false);
   const [authToken, setAuthToken] = useState(null);
   const [authUser, setAuthUser] = useState(null);
@@ -5913,7 +6714,7 @@ function App() {
         if (r && r.value) {
           const parsed = JSON.parse(r.value);
           if (Array.isArray(parsed.bottomOrder) && parsed.bottomOrder.length === 2) setBottomTabOrder(parsed.bottomOrder);
-          if (Array.isArray(parsed.utilityOrder) && parsed.utilityOrder.length === 7) setUtilityOrder(parsed.utilityOrder);
+          if (Array.isArray(parsed.utilityOrder) && parsed.utilityOrder.length === 11) setUtilityOrder(parsed.utilityOrder);
         }
       } catch (e) {}
     })();
@@ -6022,7 +6823,11 @@ function App() {
     setBooksDrawerOpen(false);
     setPricesDrawerOpen(false);
     setBugsDrawerOpen(false);
+    setTeamDrawerOpen(false);
+    setScheduleDrawerOpen(false);
     setTimeClockDrawerOpen(false);
+    setWebsiteDrawerOpen(false);
+    setPasswordDrawerOpen(false);
   }
 
   const BOTTOM_TAB_DEFS = {
@@ -6041,29 +6846,51 @@ function App() {
   const UTILITY_DEFS = {
     timeclock: {
       label: "Time Clock", icon: Clock3,
-      onClick: () => { setTimeClockDrawerOpen((v) => !v); setCustomerDrawerOpen(false); setBooksDrawerOpen(false); setPricesDrawerOpen(false); setBugsDrawerOpen(false); },
+      onClick: () => { closeAllDrawers(); setTimeClockDrawerOpen((v) => !v); },
       active: timeClockDrawerOpen,
     },
     prices: {
       label: "Price Sheet", icon: Tag,
-      onClick: () => { setPricesDrawerOpen((v) => !v); setTimeClockDrawerOpen(false); setCustomerDrawerOpen(false); setBooksDrawerOpen(false); setBugsDrawerOpen(false); },
+      onClick: () => { setPricesDrawerOpen((v) => !v); setCustomerDrawerOpen(false); setBooksDrawerOpen(false); setBugsDrawerOpen(false); setTeamDrawerOpen(false); setScheduleDrawerOpen(false); setTimeClockDrawerOpen(false); setWebsiteDrawerOpen(false); setPasswordDrawerOpen(false); },
       active: pricesDrawerOpen,
     },
     directory: {
       label: "Customer Directory", icon: Users,
-      onClick: () => { setCustomerDrawerOpen((v) => !v); setTimeClockDrawerOpen(false); setBooksDrawerOpen(false); setPricesDrawerOpen(false); setBugsDrawerOpen(false); },
+      onClick: () => { setCustomerDrawerOpen((v) => !v); setBooksDrawerOpen(false); setPricesDrawerOpen(false); setBugsDrawerOpen(false); setTeamDrawerOpen(false); setScheduleDrawerOpen(false); setTimeClockDrawerOpen(false); setWebsiteDrawerOpen(false); setPasswordDrawerOpen(false); },
       active: customerDrawerOpen,
     },
     books: {
       label: "Books", icon: BookOpen,
-      onClick: () => { setBooksDrawerOpen((v) => !v); setTimeClockDrawerOpen(false); setCustomerDrawerOpen(false); setPricesDrawerOpen(false); setBugsDrawerOpen(false); },
+      onClick: () => { setBooksDrawerOpen((v) => !v); setCustomerDrawerOpen(false); setPricesDrawerOpen(false); setBugsDrawerOpen(false); setTeamDrawerOpen(false); setScheduleDrawerOpen(false); setTimeClockDrawerOpen(false); setWebsiteDrawerOpen(false); setPasswordDrawerOpen(false); },
       active: booksDrawerOpen,
       hidden: authUser && authUser.role !== "owner",
     },
     bugs: {
       label: "Report a Bug", icon: Bug,
-      onClick: () => { setBugsDrawerOpen((v) => !v); setTimeClockDrawerOpen(false); setCustomerDrawerOpen(false); setPricesDrawerOpen(false); setBooksDrawerOpen(false); },
+      onClick: () => { setBugsDrawerOpen((v) => !v); setCustomerDrawerOpen(false); setPricesDrawerOpen(false); setBooksDrawerOpen(false); setTeamDrawerOpen(false); setScheduleDrawerOpen(false); setTimeClockDrawerOpen(false); setWebsiteDrawerOpen(false); setPasswordDrawerOpen(false); },
       active: bugsDrawerOpen,
+    },
+    team: {
+      label: "Team Logins", icon: KeyRound,
+      onClick: () => { setTeamDrawerOpen((v) => !v); setCustomerDrawerOpen(false); setPricesDrawerOpen(false); setBooksDrawerOpen(false); setBugsDrawerOpen(false); setScheduleDrawerOpen(false); setTimeClockDrawerOpen(false); setWebsiteDrawerOpen(false); setPasswordDrawerOpen(false); },
+      active: teamDrawerOpen,
+      hidden: authUser && authUser.role !== "owner",
+    },
+    schedule: {
+      label: "Crew Schedule", icon: Calendar,
+      onClick: () => { setScheduleDrawerOpen((v) => !v); setCustomerDrawerOpen(false); setPricesDrawerOpen(false); setBooksDrawerOpen(false); setBugsDrawerOpen(false); setTeamDrawerOpen(false); setWebsiteDrawerOpen(false); setPasswordDrawerOpen(false); },
+      active: scheduleDrawerOpen,
+    },
+    website: {
+      label: "Website Settings", icon: Globe,
+      onClick: () => { setWebsiteDrawerOpen((v) => !v); setCustomerDrawerOpen(false); setPricesDrawerOpen(false); setBooksDrawerOpen(false); setBugsDrawerOpen(false); setTeamDrawerOpen(false); setScheduleDrawerOpen(false); setTimeClockDrawerOpen(false); setPasswordDrawerOpen(false); },
+      active: websiteDrawerOpen,
+      hidden: authUser && authUser.role !== "owner",
+    },
+    password: {
+      label: "Change Password", icon: LockIcon,
+      onClick: () => { setPasswordDrawerOpen((v) => !v); setCustomerDrawerOpen(false); setPricesDrawerOpen(false); setBooksDrawerOpen(false); setBugsDrawerOpen(false); setTeamDrawerOpen(false); setScheduleDrawerOpen(false); setTimeClockDrawerOpen(false); setWebsiteDrawerOpen(false); },
+      active: passwordDrawerOpen,
     },
     darkmode: {
       label: "Toggle dark mode", icon: darkMode ? Sun : Moon,
@@ -6105,6 +6932,7 @@ function App() {
               className="w-full rounded-lg py-2.5 text-sm text-white font-medium mt-3" style={{ backgroundColor: ACCENT_HEX, opacity: loginSubmitting ? 0.7 : 1 }}>
               {loginSubmitting ? "Logging in…" : "Log in"}
             </button>
+            <p className="text-xs text-gray-400 text-center mt-3">Forgot your password? Contact R-DUB's directly to have it reset.</p>
           </div>
         </div>
       ) : authChecking ? (
@@ -6149,6 +6977,7 @@ function App() {
         {mode === "newcustomer" && (
           <NewCustomerView editRequest={editRequest} onConsumeEditRequest={() => setEditRequest(null)}
             prefillEstimate={prefillEstimate} onConsumePrefillEstimate={() => setPrefillEstimate(null)}
+            userRole={authUser ? authUser.role : "owner"}
             onSavedExisting={(phone) => {
               if (returnToDirectoryPhone && returnToDirectoryPhone === phone) {
                 setReturnToDirectoryPhone(null);
@@ -6177,22 +7006,8 @@ function App() {
                 onEditVisit={(item) => { setEditRequest(item); setMode("newcustomer"); setCustomerDrawerOpen(false); setReturnToDirectoryPhone(item.phone); }}
                 initialExpandedPhone={directoryReopenPhone}
                 onConsumeInitialExpandedPhone={() => setDirectoryReopenPhone(null)}
+                userRole={authUser ? authUser.role : "owner"}
               />
-            </div>
-          </div>
-        )}
-
-        {timeClockDrawerOpen && (
-          <div className="fixed inset-0 z-20" style={{ top: "45px", bottom: BOTTOM_TAB_HEIGHT }}>
-            <div className="absolute inset-0 bg-black/30" onClick={() => setTimeClockDrawerOpen(false)} />
-            <div className="absolute inset-0 bg-white overflow-y-auto max-w-md mx-auto">
-              <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 sticky top-0 bg-white z-10">
-                <p className="text-sm font-medium text-gray-900">Time Clock</p>
-                <button onClick={() => setTimeClockDrawerOpen(false)} aria-label="Close" className="text-gray-400">
-                  <X size={18} />
-                </button>
-              </div>
-              <TimeClockView authUser={authUser} />
             </div>
           </div>
         )}
@@ -6223,6 +7038,79 @@ function App() {
                 </button>
               </div>
               <BugReportsView userRole={authUser ? authUser.role : "owner"} currentUsername={authUser ? authUser.username : ""} />
+            </div>
+          </div>
+        )}
+
+        {teamDrawerOpen && (
+          <div className="fixed inset-0 z-20" style={{ top: "45px", bottom: BOTTOM_TAB_HEIGHT }}>
+            <div className="absolute inset-0 bg-black/30" onClick={() => setTeamDrawerOpen(false)} />
+            <div className="absolute inset-0 bg-white overflow-y-auto max-w-md mx-auto">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 sticky top-0 bg-white z-10">
+                <p className="text-sm font-medium text-gray-900">Team Logins</p>
+                <button onClick={() => setTeamDrawerOpen(false)} aria-label="Close" className="text-gray-400">
+                  <X size={18} />
+                </button>
+              </div>
+              <TeamView authToken={authToken} currentUsername={authUser ? authUser.username : ""} />
+            </div>
+          </div>
+        )}
+
+        {timeClockDrawerOpen && (
+          <div className="fixed inset-0 z-20" style={{ top: "45px", bottom: BOTTOM_TAB_HEIGHT }}>
+            <div className="absolute inset-0 bg-black/30" onClick={() => setTimeClockDrawerOpen(false)} />
+            <div className="absolute inset-0 bg-white overflow-y-auto max-w-md mx-auto">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 sticky top-0 bg-white z-10">
+                <p className="text-sm font-medium text-gray-900">Time Clock</p>
+                <button onClick={() => setTimeClockDrawerOpen(false)} aria-label="Close" className="text-gray-400"><X size={18} /></button>
+              </div>
+              <TimeClockView authUser={authUser} />
+            </div>
+          </div>
+        )}
+
+        {scheduleDrawerOpen && (
+          <div className="fixed inset-0 z-20" style={{ top: "45px", bottom: BOTTOM_TAB_HEIGHT }}>
+            <div className="absolute inset-0 bg-black/30" onClick={() => setScheduleDrawerOpen(false)} />
+            <div className="absolute inset-0 bg-white overflow-y-auto max-w-md mx-auto">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 sticky top-0 bg-white z-10">
+                <p className="text-sm font-medium text-gray-900">Crew Schedule</p>
+                <button onClick={() => setScheduleDrawerOpen(false)} aria-label="Close" className="text-gray-400">
+                  <X size={18} />
+                </button>
+              </div>
+              <CrewScheduleView userRole={authUser ? authUser.role : "owner"} />
+            </div>
+          </div>
+        )}
+
+        {websiteDrawerOpen && (
+          <div className="fixed inset-0 z-20" style={{ top: "45px", bottom: BOTTOM_TAB_HEIGHT }}>
+            <div className="absolute inset-0 bg-black/30" onClick={() => setWebsiteDrawerOpen(false)} />
+            <div className="absolute inset-0 bg-white overflow-y-auto max-w-md mx-auto">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 sticky top-0 bg-white z-10">
+                <p className="text-sm font-medium text-gray-900">Website Settings</p>
+                <button onClick={() => setWebsiteDrawerOpen(false)} aria-label="Close" className="text-gray-400">
+                  <X size={18} />
+                </button>
+              </div>
+              <WebsiteSettingsView />
+            </div>
+          </div>
+        )}
+
+        {passwordDrawerOpen && (
+          <div className="fixed inset-0 z-20" style={{ top: "45px", bottom: BOTTOM_TAB_HEIGHT }}>
+            <div className="absolute inset-0 bg-black/30" onClick={() => setPasswordDrawerOpen(false)} />
+            <div className="absolute inset-0 bg-white overflow-y-auto max-w-md mx-auto">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 sticky top-0 bg-white z-10">
+                <p className="text-sm font-medium text-gray-900">Change Password</p>
+                <button onClick={() => setPasswordDrawerOpen(false)} aria-label="Close" className="text-gray-400">
+                  <X size={18} />
+                </button>
+              </div>
+              <ChangePasswordView />
             </div>
           </div>
         )}

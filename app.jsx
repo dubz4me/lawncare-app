@@ -5717,10 +5717,29 @@ function TimeClockView({ authUser }) {
     return () => clearInterval(id);
   }, [status && status.activeEntry && status.activeEntry.id]);
 
+  function normalizeTimeEntry(entry) {
+    if (!entry) return null;
+    return {
+      ...entry,
+      userId: entry.userId ?? entry.user_id,
+      employeeName: entry.employeeName ?? entry.employee_name,
+      clockIn: entry.clockIn ?? entry.clock_in,
+      clockOut: entry.clockOut ?? entry.clock_out,
+      createdAt: entry.createdAt ?? entry.created_at,
+      updatedAt: entry.updatedAt ?? entry.updated_at,
+      editedAt: entry.editedAt ?? entry.edited_at,
+      editedBy: entry.editedBy ?? entry.edited_by,
+      editReason: entry.editReason ?? entry.edit_reason,
+    };
+  }
+
   async function api(path, options) {
     const res = await fetch(`${API_BASE}${path}`, { ...(options || {}), headers: authHeaders((options && options.headers) || {}) });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || "Time clock request failed.");
+    if (data.activeEntry) data.activeEntry = normalizeTimeEntry(data.activeEntry);
+    if (Array.isArray(data.entries)) data.entries = data.entries.map(normalizeTimeEntry);
+    if (Array.isArray(data.active)) data.active = data.active.map(normalizeTimeEntry);
     return data;
   }
 

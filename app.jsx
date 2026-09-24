@@ -59,13 +59,10 @@ const ClipboardList = makeIcon(<>
 const Settings2 = makeIcon(<>
   <path d="M20 7h-9M14 17H5" /><circle cx="17" cy="17" r="3" /><circle cx="7" cy="7" r="3" />
 </>);
+const Clock3 = makeIcon(<><circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 16 14" /></>);
 const Bug = makeIcon(<>
   <rect x="8" y="6" width="8" height="14" rx="4" />
   <path d="M19 7l-3 2M5 7l3 2M19 19l-3-2M5 19l3-2M12 6V3M12 20v1M3 13h5M16 13h5M9 13h6" />
-</>);
-const KeyRound = makeIcon(<>
-  <path d="M2.5 21.5L11 13" />
-  <path d="M16.5 3a5.5 5.5 0 1 0 4.5 8.66V16h-2.5v2.5H16V21h-2.5l-2.16-2.16A5.5 5.5 0 0 0 16.5 3z" />
 </>);
 
 
@@ -644,7 +641,7 @@ function emptyBuilderState() {
   };
 }
 
-function NewCustomerView({ editRequest, onConsumeEditRequest, prefillEstimate, onConsumePrefillEstimate, onSavedExisting, userRole }) {
+function NewCustomerView({ editRequest, onConsumeEditRequest, prefillEstimate, onConsumePrefillEstimate, onSavedExisting }) {
   const [motivationLine] = useState(() => randomMotivationLine());
   const [mowingEnabled, setMowingEnabled] = useState(false);
   const [mowingType, setMowingType] = useState("recurring");
@@ -1120,12 +1117,6 @@ function NewCustomerView({ editRequest, onConsumeEditRequest, prefillEstimate, o
           <div className="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-800">
             <span>Editing estimate from {editingDate} — Save will update this record.</span>
             <button onClick={resetAll} className="underline shrink-0 ml-2">Cancel</button>
-          </div>
-        )}
-
-        {editingTimestamp && userRole !== "owner" && (status === "confirmed" || status === "completed") && (
-          <div className="border rounded-lg px-3 py-2 text-xs" style={{ borderColor: "var(--accent)", backgroundColor: "var(--surface-alt)", color: "var(--text-muted)" }}>
-            Pricing is locked on this job — it's already {status}. Notes, photos, and other details can still be updated; price changes need the owner.
           </div>
         )}
 
@@ -2150,7 +2141,6 @@ function BusinessView({ onEditRequest, onPrefillEstimate, userRole }) {
 
       const moved = [];
       const skipped = [];
-      const moves = [];
 
       for (const t of todaysJobs) {
         const oldSlotId = t.booking.slotId;
@@ -2160,27 +2150,21 @@ function BusinessView({ onEditRequest, onPrefillEstimate, userRole }) {
           continue;
         }
         const isExactMatch = newSlot.dateISO === newDateISO && newSlot.slotId === oldSlotId;
-        const newBookingData = { ...t.booking, id: `${newSlot.dateISO}:${newSlot.slotId}`, dateISO: newSlot.dateISO, slotId: newSlot.slotId, slotLabel: newSlot.slotLabel, startMs: newSlot.startMs };
-        delete newBookingData.key;
-        const move = { oldBookingKey: t.booking.key, newBooking: newBookingData };
-        if (t.appointment) {
-          move.oldApptId = `${t.phone}:${t.booking.startMs}`;
-          move.newAppt = { ...t.appointment, id: `${t.phone}:${newSlot.startMs}`, dateISO: newSlot.dateISO, slotId: newSlot.slotId, slotLabel: newSlot.slotLabel, startMs: newSlot.startMs, updatedAt: Date.now() };
-        }
-        moves.push(move);
-        bookedSet.add(newSlot.key);
-        moved.push({ name: t.customerName, phone: t.phone, dateISO: newSlot.dateISO, slotLabel: newSlot.slotLabel, isExactMatch });
-      }
+        try {
+          await deleteTableRecord(TABLE_KEYS.bookings, true, t.booking.key);
+          const newBookingData = { ...t.booking, dateISO: newSlot.dateISO, slotId: newSlot.slotId, slotLabel: newSlot.slotLabel, startMs: newSlot.startMs };
+          delete newBookingData.key;
+          await setTableRecord(TABLE_KEYS.bookings, true, `${newSlot.dateISO}:${newSlot.slotId}`, newBookingData);
 
-      if (moves.length > 0) {
-        const res = await fetch(`${API_BASE}/api/bookings/bulk-reschedule`, {
-          method: "POST",
-          headers: authHeaders({ "Content-Type": "application/json" }),
-          body: JSON.stringify({ moves }),
-        });
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({}));
-          throw new Error(data.error || "Couldn't reschedule the day.");
+          if (t.appointment) {
+            await deleteTableRecord(TABLE_KEYS.appointments, true, `${t.phone}:${t.booking.startMs}`);
+            const newAppt = { ...t.appointment, dateISO: newSlot.dateISO, slotId: newSlot.slotId, slotLabel: newSlot.slotLabel, startMs: newSlot.startMs, updatedAt: Date.now() };
+            await setTableRecord(TABLE_KEYS.appointments, true, `${t.phone}:${newSlot.startMs}`, newAppt);
+          }
+          bookedSet.add(newSlot.key);
+          moved.push({ name: t.customerName, phone: t.phone, dateISO: newSlot.dateISO, slotLabel: newSlot.slotLabel, isExactMatch });
+        } catch (e) {
+          skipped.push({ name: t.customerName, reason: "something went wrong moving this one" });
         }
       }
 
@@ -2227,7 +2211,7 @@ function BusinessView({ onEditRequest, onPrefillEstimate, userRole }) {
             <h2 className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--accent)" }}>
               Today{todaysJobs.length > 0 ? ` (${todaysJobs.length})` : ""}
             </h2>
-            {todaysJobs.length > 0 && userRole === "owner" && (
+            {todaysJobs.length > 0 && (
               <button onClick={() => { setRescheduleNewDate(""); setRescheduleResult(null); setRescheduleCopyFeedback({}); setRescheduleDayOpen(true); }}
                 className="text-xs rounded-full px-3 py-1 border" style={{ borderColor: "var(--warn)", color: "var(--warn)" }}>
                 ⛈ Reschedule today
@@ -2384,11 +2368,9 @@ function BusinessView({ onEditRequest, onPrefillEstimate, userRole }) {
                     <button onClick={(e) => { e.stopPropagation(); onEditRequest(item); }} className="text-xs text-gray-600 border border-gray-300 rounded-full px-3 py-1">
                       Edit
                     </button>
-                    {userRole === "owner" && (
                     <button onClick={(e) => { e.stopPropagation(); deleteEstimateItem(item); }} className="text-gray-400 ml-auto" aria-label="Delete estimate">
                       <Trash2 size={15} />
                     </button>
-                    )}
                   </div>
                 </div>
                 );
@@ -2460,11 +2442,9 @@ function BusinessView({ onEditRequest, onPrefillEstimate, userRole }) {
                       <button onClick={(e) => { e.stopPropagation(); onEditRequest(item); }} className="text-xs text-gray-600 border border-gray-300 rounded-full px-3 py-1">
                         Edit
                       </button>
-                      {userRole === "owner" && (
                       <button onClick={(e) => { e.stopPropagation(); deleteEstimateItem(item); }} className="text-gray-400 ml-auto" aria-label="Delete estimate">
                         <Trash2 size={15} />
                       </button>
-                      )}
                     </div>
                     {!timerRunningHere && !timerRunningElsewhere && (
                       <p className="text-xs text-gray-400 mt-1">Start the timer before marking this job complete.</p>
@@ -2649,11 +2629,9 @@ function BusinessView({ onEditRequest, onPrefillEstimate, userRole }) {
                         <button onClick={(e) => { e.stopPropagation(); onEditRequest(item); }} className="text-gray-400" aria-label="Edit estimate">
                           <Pencil size={16} />
                         </button>
-                        {userRole === "owner" && (
                         <button onClick={(e) => { e.stopPropagation(); deleteEstimateItem(item); }} className="text-gray-400" aria-label="Delete estimate">
                           <Trash2 size={16} />
                         </button>
-                        )}
                         {expandedId === item.timestamp ? <ChevronUp size={16} className="text-gray-400" /> : <ChevronDown size={16} className="text-gray-400" />}
                       </div>
                     </div>
@@ -2699,11 +2677,9 @@ function BusinessView({ onEditRequest, onPrefillEstimate, userRole }) {
                     <button onClick={() => markAgreed(item)} className="text-xs rounded-full px-3 py-1 border border-gray-300 text-gray-600">
                       Changed mind — mark agreed
                     </button>
-                    {userRole === "owner" && (
                     <button onClick={() => deleteEstimateItem(item)} className="text-gray-400 ml-auto" aria-label="Delete estimate">
                       <Trash2 size={15} />
                     </button>
-                    )}
                   </div>
                 </div>
               ))}
@@ -2929,12 +2905,10 @@ function BusinessView({ onEditRequest, onPrefillEstimate, userRole }) {
                 className="text-xs rounded-full px-3 py-1.5 border border-gray-300 text-gray-600">
                 Edit
               </button>
-              {userRole === "owner" && (
               <button onClick={() => { deleteEstimateItem(pendingDetailItem); closePendingDetail(); }}
                 className="text-gray-400 ml-auto" aria-label="Delete estimate">
                 <Trash2 size={15} />
               </button>
-              )}
             </div>
             <button onClick={closePendingDetail} className="w-full border border-gray-300 rounded-lg py-2 text-sm text-gray-700">
               Close
@@ -3282,7 +3256,7 @@ function BusinessView({ onEditRequest, onPrefillEstimate, userRole }) {
   );
 }
 
-function CustomerDirectoryView({ onEditVisit, initialExpandedPhone, onConsumeInitialExpandedPhone, userRole }) {
+function CustomerDirectoryView({ onEditVisit, initialExpandedPhone, onConsumeInitialExpandedPhone }) {
   const [motivationLine] = useState(() => randomMotivationLine());
   const [history, setHistory] = useState([]);
   const [search, setSearch] = useState("");
@@ -3731,14 +3705,25 @@ function CustomerDirectoryView({ onEditVisit, initialExpandedPhone, onConsumeIni
     setDeletingCustomer(true);
     const phone = deleteConfirmCustomer.phone;
     try {
-      const res = await fetch(`${API_BASE}/api/customer-profiles/${encodeURIComponent(phone)}`, {
-        method: "DELETE",
-        headers: authHeaders(),
-      });
-      if (!res.ok) {
-        setDeletingCustomer(false);
-        return;
+      const estimatesTable = await loadTable(TABLE_KEYS.estimates, false);
+      const estimateIdsToDelete = Object.keys(estimatesTable).filter((k) => estimatesTable[k].phone === phone);
+      for (const id of estimateIdsToDelete) {
+        await deleteTableRecord(TABLE_KEYS.estimates, false, id);
       }
+
+      const apptTable = await loadTable(TABLE_KEYS.appointments, true);
+      const apptIdsToDelete = Object.keys(apptTable).filter((k) => apptTable[k].phone === phone);
+      for (const id of apptIdsToDelete) {
+        await deleteTableRecord(TABLE_KEYS.appointments, true, id);
+      }
+
+      const bookingsTable = await loadTable(TABLE_KEYS.bookings, true);
+      const bookingIdsToDelete = Object.keys(bookingsTable).filter((k) => bookingsTable[k].phone === phone);
+      for (const id of bookingIdsToDelete) {
+        await deleteTableRecord(TABLE_KEYS.bookings, true, id);
+      }
+
+      await deleteTableRecord(TABLE_KEYS.profiles, true, phone);
 
       setHistory((prev) => prev.filter((h) => h.phone !== phone));
       setProfiles((prev) => {
@@ -3766,17 +3751,40 @@ function CustomerDirectoryView({ onEditVisit, initialExpandedPhone, onConsumeIni
   }
 
   async function migrateCustomerPhone(oldPhone, newPhone, newProfileData) {
-    const res = await fetch(`${API_BASE}/api/customers/${encodeURIComponent(oldPhone)}/change-phone`, {
-      method: "POST",
-      headers: authHeaders({ "Content-Type": "application/json" }),
-      body: JSON.stringify({ newPhone, ...newProfileData }),
+    const apptTable = await loadTable(TABLE_KEYS.appointments, true);
+    const migratedNv = [];
+    const newAppts = {};
+    const oldApptIds = [];
+    Object.keys(apptTable).forEach((k) => {
+      if (apptTable[k].phone === oldPhone) {
+        const updated = { ...apptTable[k], phone: newPhone };
+        const newKey = k.replace(`${oldPhone}:`, `${newPhone}:`);
+        oldApptIds.push(k);
+        newAppts[newKey] = updated;
+        migratedNv.push(updated);
+      }
     });
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      throw new Error(data.error || "Couldn't change the phone number.");
+    for (const oldId of oldApptIds) {
+      await deleteTableRecord(TABLE_KEYS.appointments, true, oldId);
     }
+    await saveTable(TABLE_KEYS.appointments, true, newAppts);
 
-    const migratedNv = (nextVisits[oldPhone] || []).map((nv) => ({ ...nv, phone: newPhone }));
+    const estimatesTable = await loadTable(TABLE_KEYS.estimates, false);
+    const changedEstimates = {};
+    Object.keys(estimatesTable).forEach((k) => {
+      if (estimatesTable[k].phone === oldPhone) changedEstimates[k] = { ...estimatesTable[k], phone: newPhone };
+    });
+    await saveTable(TABLE_KEYS.estimates, false, changedEstimates);
+
+    const bookingsTable = await loadTable(TABLE_KEYS.bookings, true);
+    const changedBookings = {};
+    Object.keys(bookingsTable).forEach((k) => {
+      if (bookingsTable[k].phone === oldPhone) changedBookings[k] = { ...bookingsTable[k], phone: newPhone };
+    });
+    await saveTable(TABLE_KEYS.bookings, true, changedBookings);
+
+    await deleteTableRecord(TABLE_KEYS.profiles, true, oldPhone);
+    await setTableRecord(TABLE_KEYS.profiles, true, newPhone, newProfileData);
 
     setProfiles((prev) => {
       const next = { ...prev };
@@ -3829,7 +3837,7 @@ function CustomerDirectoryView({ onEditVisit, initialExpandedPhone, onConsumeIni
       }
       setEditingProfilePhone(null);
     } catch (e) {
-      setPhoneChangeError(e.message || "Something went wrong saving — try again.");
+      setPhoneChangeError("Something went wrong saving — try again.");
     } finally {
       setProfileSaving(false);
     }
@@ -3943,11 +3951,9 @@ function CustomerDirectoryView({ onEditVisit, initialExpandedPhone, onConsumeIni
                     <label className="block text-xs text-gray-500 mb-1">Name</label>
                     <input type="text" value={editName} onChange={(e) => setEditName(e.target.value)}
                       className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm mb-2" />
-                    <label className="block text-xs text-gray-500 mb-1">Phone{userRole !== "owner" ? " (owner only)" : ""}</label>
+                    <label className="block text-xs text-gray-500 mb-1">Phone</label>
                     <input type="tel" value={editPhone} onChange={(e) => setEditPhone(e.target.value)}
-                      readOnly={userRole !== "owner"}
-                      className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm mb-2"
-                      style={userRole !== "owner" ? { backgroundColor: "var(--surface-alt)", color: "var(--text-muted)" } : undefined} />
+                      className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm mb-2" />
                     <label className="block text-xs text-gray-500 mb-1">Address</label>
                     <input type="text" value={editAddress} onChange={(e) => setEditAddress(e.target.value)}
                       className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm mb-2" />
@@ -4256,12 +4262,10 @@ function CustomerDirectoryView({ onEditVisit, initialExpandedPhone, onConsumeIni
                       )}
                   </div>
 
-                  {userRole === "owner" && (
-                    <button onClick={(e) => { e.stopPropagation(); requestDeleteCustomer(c); }}
-                      className="text-xs text-red-600 underline">
-                      Delete customer
-                    </button>
-                  )}
+                  <button onClick={(e) => { e.stopPropagation(); requestDeleteCustomer(c); }}
+                    className="text-xs text-red-600 underline">
+                    Delete customer
+                  </button>
 
                   </div>
                 )}
@@ -5692,255 +5696,159 @@ function BugReportsView({ userRole, currentUsername }) {
   );
 }
 
-const ONBOARD_WORDS = ["river", "maple", "cedar", "birch", "clover", "meadow", "willow", "acorn", "harbor", "ridge", "pine", "hollow"];
-function generateOnboardPassword() {
-  const w1 = ONBOARD_WORDS[Math.floor(Math.random() * ONBOARD_WORDS.length)];
-  const w2 = ONBOARD_WORDS[Math.floor(Math.random() * ONBOARD_WORDS.length)];
-  const num = Math.floor(100 + Math.random() * 900);
-  return `${w1}-${w2}-${num}`;
-}
-
-function TeamView({ authToken, currentUsername }) {
-  const [users, setUsers] = useState([]);
+function TimeClockView({ authUser }) {
+  const [status, setStatus] = useState(null);
+  const [entries, setEntries] = useState([]);
+  const [team, setTeam] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [newName, setNewName] = useState("");
-  const [newUsername, setNewUsername] = useState("");
-  const [newPassword, setNewPassword] = useState(() => generateOnboardPassword());
-  const [creating, setCreating] = useState(false);
-  const [createError, setCreateError] = useState("");
-  const [justCreated, setJustCreated] = useState(null);
-  const [removeConfirm, setRemoveConfirm] = useState(null);
-  const [copied, setCopied] = useState(false);
-  const [pausingUsername, setPausingUsername] = useState(null);
-  const [deletedCustomers, setDeletedCustomers] = useState([]);
-  const [deletedLoading, setDeletedLoading] = useState(true);
-  const [restoringId, setRestoringId] = useState(null);
-  const [restoredIds, setRestoredIds] = useState({});
+  const [working, setWorking] = useState(false);
+  const [error, setError] = useState("");
+  const [now, setNow] = useState(Date.now());
 
-  async function loadUsers() {
+  const isOwner = authUser && authUser.role === "owner";
+
+  useEffect(() => {
+    refresh();
+  }, []);
+
+  useEffect(() => {
+    if (!status || !status.activeEntry) return;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [status && status.activeEntry && status.activeEntry.id]);
+
+  async function api(path, options) {
+    const res = await fetch(`${API_BASE}${path}`, { ...(options || {}), headers: authHeaders((options && options.headers) || {}) });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || "Time clock request failed.");
+    return data;
+  }
+
+  function localWeekStartMs() {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    const daysFromMonday = (d.getDay() + 6) % 7;
+    d.setDate(d.getDate() - daysFromMonday);
+    return d.getTime();
+  }
+
+  async function refresh() {
     setLoading(true);
+    setError("");
     try {
-      const res = await fetch(`${API_BASE}/api/auth/users`, { headers: authHeaders() });
-      if (res.ok) {
-        const data = await res.json();
-        setUsers(data.users || []);
-      }
-    } catch (e) {}
-    setLoading(false);
-  }
-
-  useEffect(() => { loadUsers(); loadDeletedCustomers(); }, []);
-
-  async function loadDeletedCustomers() {
-    setDeletedLoading(true);
-    try {
-      const res = await fetch(`${API_BASE}/api/deleted-customers`, { headers: authHeaders() });
-      if (res.ok) {
-        const data = await res.json();
-        setDeletedCustomers(data.deletedCustomers || []);
-      }
-    } catch (e) {}
-    setDeletedLoading(false);
-  }
-
-  async function restoreCustomer(entry) {
-    setRestoringId(entry.id);
-    try {
-      const res = await fetch(`${API_BASE}/api/deleted-customers/${encodeURIComponent(entry.id)}/restore`, {
-        method: "POST",
-        headers: authHeaders({ "Content-Type": "application/json" }),
-      });
-      if (res.ok) setRestoredIds((prev) => ({ ...prev, [entry.id]: true }));
-    } catch (e) {}
-    setRestoringId(null);
-  }
-
-  async function togglePause(username, currentlyDisabled) {
-    setPausingUsername(username);
-    setUsers((prev) => prev.map((u) => (u.username === username ? { ...u, disabled: currentlyDisabled ? 0 : 1 } : u)));
-    try {
-      await fetch(`${API_BASE}/api/auth/users/${encodeURIComponent(username)}/pause`, {
-        method: "POST",
-        headers: authHeaders({ "Content-Type": "application/json" }),
-        body: JSON.stringify({ disabled: !currentlyDisabled }),
-      });
-    } catch (e) {}
-    setPausingUsername(null);
-  }
-
-  async function createUser() {
-    if (!newUsername.trim()) {
-      setCreateError("Enter a username.");
-      return;
-    }
-    setCreating(true);
-    setCreateError("");
-    try {
-      const res = await fetch(`${API_BASE}/api/auth/invite`, {
-        method: "POST",
-        headers: authHeaders({ "Content-Type": "application/json" }),
-        body: JSON.stringify({ username: newUsername.trim(), password: newPassword, name: newName.trim() }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setCreateError(data.error || "Couldn't create the login.");
-        setCreating(false);
-        return;
-      }
-      setJustCreated({ username: newUsername.trim(), password: newPassword, name: newName.trim() });
-      setNewName("");
-      setNewUsername("");
-      setNewPassword(generateOnboardPassword());
-      await loadUsers();
+      const [statusData, mineData, teamData] = await Promise.all([
+        api(`/api/time-clock/status?weekStart=${localWeekStartMs()}`),
+        api("/api/time-clock/me?limit=50"),
+        isOwner ? api("/api/time-clock/team?limit=100") : Promise.resolve({ entries: [], active: [] }),
+      ]);
+      setStatus(statusData);
+      setEntries(mineData.entries || []);
+      setTeam(isOwner ? (teamData.entries || []) : []);
+      if (isOwner) setStatus((prev) => ({ ...(prev || statusData), teamActive: teamData.active || [] }));
+      setNow(Date.now());
     } catch (e) {
-      setCreateError("Couldn't reach the server — try again.");
+      setError(e.message || "Couldn't load the time clock.");
+    } finally {
+      setLoading(false);
     }
-    setCreating(false);
   }
 
-  async function removeUser(username) {
-    setRemoveConfirm(null);
-    setUsers((prev) => prev.filter((u) => u.username !== username));
+  async function punch(kind) {
+    setWorking(true);
+    setError("");
     try {
-      await fetch(`${API_BASE}/api/auth/users/${encodeURIComponent(username)}`, {
-        method: "DELETE",
-        headers: authHeaders(),
-      });
-    } catch (e) {}
+      await api(`/api/time-clock/${kind}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+      await refresh();
+    } catch (e) {
+      setError(e.message || "Couldn't update the time clock.");
+    } finally {
+      setWorking(false);
+    }
   }
 
-  function copyCredentials() {
-    if (!justCreated) return;
-    const text = `R-DUB's Lawn Care login\nUsername: ${justCreated.username}\nPassword: ${justCreated.password}`;
-    copyText(text, () => { setCopied(true); setTimeout(() => setCopied(false), 2000); });
+  function fmtTime(ms) {
+    if (!ms) return "—";
+    return new Date(Number(ms)).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
   }
+  function fmtDate(ms) {
+    if (!ms) return "—";
+    return new Date(Number(ms)).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
+  }
+  function duration(start, end) {
+    const mins = Math.max(0, Math.floor(((end || now) - start) / 60000));
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    return `${h}h ${String(m).padStart(2, "0")}m`;
+  }
+
+  const active = status && status.activeEntry;
+  const weekMinutes = status ? Number(status.weekMinutes || 0) : 0;
 
   return (
     <div className="pb-8">
       <div className="px-4 pt-5 pb-4 border-b border-gray-200 flex items-center gap-3">
         <Badge />
         <div>
-          <p className="text-base font-medium text-gray-900">R-DUB's Lawn Care</p>
-          <p className="text-sm" style={{ color: "var(--accent)" }}>Team Logins</p>
+          <p className="text-base font-medium text-gray-900">Employee Time Clock</p>
+          <p className="text-sm" style={{ color: "var(--accent)" }}>{authUser ? (authUser.name || authUser.username) : "R-DUB's Lawn Care"}</p>
         </div>
       </div>
 
       <div className="px-4 py-4 space-y-5">
-        {justCreated && (
-          <div className="border rounded-lg p-3 text-xs" style={{ borderColor: "var(--success)", backgroundColor: "#ECFDF5" }}>
-            <p className="font-medium text-gray-800 mb-1">Login created — share these with {justCreated.name || justCreated.username} now.</p>
-            <p className="text-gray-600">This password won't be shown again after you leave this screen.</p>
-            <div className="bg-white border border-gray-200 rounded-md p-2 mt-2 font-mono text-gray-800">
-              <div>Username: {justCreated.username}</div>
-              <div>Password: {justCreated.password}</div>
-            </div>
-            <button onClick={copyCredentials} className="w-full rounded-lg py-2 text-xs font-medium mt-2 text-white" style={{ backgroundColor: ACCENT_HEX }}>
-              {copied ? "Copied!" : "Copy to share"}
-            </button>
-            <button onClick={() => setJustCreated(null)} className="w-full text-center text-gray-400 mt-2">Done</button>
-          </div>
-        )}
+        {error && <div className="rounded-lg border p-3 text-sm" style={{ borderColor: "var(--warn)", color: "var(--warn)" }}>{error}</div>}
 
-        {!justCreated && (
-          <section>
-            <h2 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--accent)" }}>Add a Team Member</h2>
-            <label className="block text-xs text-gray-500 mb-1">Name</label>
-            <input type="text" value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="e.g. Mike"
-              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm mb-3" />
-            <label className="block text-xs text-gray-500 mb-1">Username</label>
-            <input type="text" value={newUsername} onChange={(e) => setNewUsername(e.target.value)} placeholder="e.g. mike"
-              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm mb-3" autoCapitalize="none" autoCorrect="off" />
-            <label className="block text-xs text-gray-500 mb-1">Password (generated for you)</label>
-            <div className="flex items-center gap-2">
-              <input type="text" value={newPassword} readOnly className="flex-1 border border-gray-300 rounded-md px-3 py-2 text-sm font-mono bg-gray-50" />
-              <button onClick={() => setNewPassword(generateOnboardPassword())} className="text-xs px-2 py-2 border border-gray-300 rounded-md text-gray-500">New</button>
-            </div>
-            {createError && <p className="text-xs mt-2" style={{ color: "var(--warn)" }}>{createError}</p>}
-            <button onClick={createUser} disabled={creating || !newUsername.trim()}
-              className="w-full rounded-lg py-2.5 text-sm text-white font-medium mt-3"
-              style={{ backgroundColor: ACCENT_HEX, opacity: creating || !newUsername.trim() ? 0.6 : 1 }}>
-              {creating ? "Creating…" : "Create Login"}
-            </button>
-            <p className="text-xs text-gray-400 mt-2">New logins are crew accounts — they won't see Books or payment status.</p>
-          </section>
-        )}
+        <section className="border border-gray-200 rounded-xl p-4 text-center">
+          {loading ? <p className="text-sm text-gray-400">Loading time clock…</p> : (
+            <>
+              <p className="text-xs uppercase tracking-wide text-gray-400">{active ? "Clocked in" : "Currently clocked out"}</p>
+              {active && <p className="text-3xl font-semibold text-gray-900 mt-2">{duration(Number(active.clockIn), now)}</p>}
+              {active && <p className="text-xs text-gray-500 mt-1">Started {fmtTime(active.clockIn)}</p>}
+              <button onClick={() => punch(active ? "out" : "in")} disabled={working}
+                className="w-full rounded-xl py-3.5 mt-4 text-white text-base font-semibold"
+                style={{ backgroundColor: active ? "#B91C1C" : ACCENT_HEX, opacity: working ? 0.65 : 1 }}>
+                {working ? "Saving…" : active ? "Clock Out" : "Clock In"}
+              </button>
+              <p className="text-xs text-gray-400 mt-2">Official punch time is recorded by the server.</p>
+            </>
+          )}
+        </section>
+
+        <section className="grid grid-cols-2 gap-2">
+          <div className="border border-gray-200 rounded-lg p-3">
+            <p className="text-xs text-gray-400">This week</p>
+            <p className="text-lg font-semibold text-gray-900">{Math.floor(weekMinutes / 60)}h {String(weekMinutes % 60).padStart(2, "0")}m</p>
+          </div>
+          <div className="border border-gray-200 rounded-lg p-3">
+            <p className="text-xs text-gray-400">Status</p>
+            <p className="text-lg font-semibold" style={{ color: active ? "var(--success)" : "var(--text)" }}>{active ? "Working" : "Off clock"}</p>
+          </div>
+        </section>
 
         <section>
-          <h2 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--accent)" }}>Who Has Access</h2>
-          {loading ? (
-            <p className="text-xs text-gray-400">Loading…</p>
-          ) : (
+          <h2 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--accent)" }}>My recent punches</h2>
+          {entries.length === 0 ? <p className="text-sm text-gray-400 border border-gray-200 rounded-lg p-3">No workday punches yet.</p> : (
             <div className="space-y-2">
-              {users.map((u) => (
-                <div key={u.username} className="border border-gray-200 rounded-lg p-3 text-xs">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="font-medium text-gray-800">
-                        {u.name || u.username}
-                        {!!u.disabled && <span className="ml-2 text-xs font-normal px-1.5 py-0.5 rounded" style={{ backgroundColor: "#FEF3C7", color: "#92400E" }}>Paused</span>}
-                      </p>
-                      <p className="text-gray-400">{u.username} · {u.role === "owner" ? "Owner" : "Crew"}</p>
-                    </div>
-                    {u.username !== currentUsername && u.role !== "owner" && (
-                      removeConfirm === u.username ? (
-                        <div className="flex items-center gap-2">
-                          <button onClick={() => removeUser(u.username)} className="text-white rounded px-2 py-1" style={{ backgroundColor: "#DC2626" }}>Remove</button>
-                          <button onClick={() => setRemoveConfirm(null)} className="text-gray-400">Cancel</button>
-                        </div>
-                      ) : (
-                        <button onClick={() => setRemoveConfirm(u.username)} className="text-gray-400"><Trash2 size={14} /></button>
-                      )
-                    )}
-                  </div>
-                  {u.username !== currentUsername && u.role !== "owner" && (
-                    <button onClick={() => togglePause(u.username, u.disabled)} disabled={pausingUsername === u.username}
-                      className="w-full mt-2 rounded-md py-1.5 text-xs font-medium border"
-                      style={u.disabled
-                        ? { borderColor: "var(--success)", color: "var(--success)" }
-                        : { borderColor: "var(--warn)", color: "#92400E" }}>
-                      {pausingUsername === u.username ? "…" : u.disabled ? "Resume access" : "Pause access instantly"}
-                    </button>
-                  )}
+              {entries.map((e) => (
+                <div key={e.id} className="border border-gray-200 rounded-lg p-3 text-sm">
+                  <div className="flex justify-between gap-3"><span className="font-medium text-gray-800">{fmtDate(e.clockIn)}</span><span className="text-gray-600">{duration(Number(e.clockIn), e.clockOut ? Number(e.clockOut) : now)}</span></div>
+                  <p className="text-xs text-gray-500 mt-1">{fmtTime(e.clockIn)} → {e.clockOut ? fmtTime(e.clockOut) : "Still clocked in"}</p>
+                  {!!e.editedAt && <p className="text-xs mt-1" style={{ color: "var(--warn)" }}>Corrected by owner</p>}
                 </div>
               ))}
             </div>
           )}
         </section>
 
-        <section>
-          <h2 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--accent)" }}>Recently Deleted Customers</h2>
-          <p className="text-xs text-gray-400 mb-2">If a customer was deleted by mistake — or by someone who shouldn't have — restore them here.</p>
-          {deletedLoading ? (
-            <p className="text-xs text-gray-400">Loading…</p>
-          ) : deletedCustomers.length === 0 ? (
-            <p className="text-xs text-gray-400">Nothing deleted recently.</p>
-          ) : (
-            <div className="space-y-2">
-              {deletedCustomers.map((d) => {
-                const profile = d.profile_snapshot ? JSON.parse(d.profile_snapshot) : null;
-                const isRestored = d.restored || restoredIds[d.id];
-                return (
-                  <div key={d.id} className="border border-gray-200 rounded-lg p-3 text-xs flex items-center justify-between">
-                    <div>
-                      <p className="font-medium text-gray-800">{profile ? profile.name || d.phone : d.phone}</p>
-                      <p className="text-gray-400">
-                        Deleted by {d.deleted_by} ({d.deleted_by_role}) · {new Date(d.deleted_at).toLocaleDateString()}
-                      </p>
-                    </div>
-                    {isRestored ? (
-                      <span className="text-gray-400">Restored</span>
-                    ) : (
-                      <button onClick={() => restoreCustomer(d)} disabled={restoringId === d.id}
-                        className="rounded-md px-3 py-1.5 text-xs font-medium text-white" style={{ backgroundColor: ACCENT_HEX }}>
-                        {restoringId === d.id ? "Restoring…" : "Restore"}
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </section>
+        {isOwner && (
+          <section>
+            <h2 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--accent)" }}>Crew currently clocked in</h2>
+            {(!status || !(status.teamActive || []).length) ? <p className="text-sm text-gray-400 border border-gray-200 rounded-lg p-3">Nobody else is clocked in.</p> : (
+              <div className="space-y-2">{status.teamActive.map((e) => <div key={e.id} className="border border-gray-200 rounded-lg p-3 text-sm flex justify-between"><div><p className="font-medium text-gray-800">{e.employeeName || e.username}</p><p className="text-xs text-gray-500">Since {fmtTime(e.clockIn)}</p></div><span className="font-medium text-gray-700">{duration(Number(e.clockIn), now)}</span></div>)}</div>
+            )}
+            <h2 className="text-xs font-semibold uppercase tracking-wide mt-5 mb-2" style={{ color: "var(--accent)" }}>Recent team punches</h2>
+            <div className="space-y-2">{team.slice(0, 30).map((e) => <div key={e.id} className="border border-gray-200 rounded-lg p-3 text-sm"><div className="flex justify-between gap-3"><span className="font-medium text-gray-800">{e.employeeName || e.username}</span><span className="text-gray-600">{duration(Number(e.clockIn), e.clockOut ? Number(e.clockOut) : now)}</span></div><p className="text-xs text-gray-500 mt-1">{fmtDate(e.clockIn)} · {fmtTime(e.clockIn)} → {e.clockOut ? fmtTime(e.clockOut) : "Open"}</p></div>)}</div>
+          </section>
+        )}
       </div>
     </div>
   );
@@ -5954,11 +5862,11 @@ function App() {
   const [booksDrawerOpen, setBooksDrawerOpen] = useState(false);
   const [pricesDrawerOpen, setPricesDrawerOpen] = useState(false);
   const [bugsDrawerOpen, setBugsDrawerOpen] = useState(false);
-  const [teamDrawerOpen, setTeamDrawerOpen] = useState(false);
+  const [timeClockDrawerOpen, setTimeClockDrawerOpen] = useState(false);
   const [returnToDirectoryPhone, setReturnToDirectoryPhone] = useState(null);
   const [directoryReopenPhone, setDirectoryReopenPhone] = useState(null);
   const [bottomTabOrder, setBottomTabOrder] = useState(["newcustomer", "business"]);
-  const [utilityOrder, setUtilityOrder] = useState(["prices", "directory", "books", "bugs", "team", "darkmode", "logout"]);
+  const [utilityOrder, setUtilityOrder] = useState(["timeclock", "prices", "directory", "books", "bugs", "darkmode", "logout"]);
   const [layoutEditMode, setLayoutEditMode] = useState(false);
   const [authToken, setAuthToken] = useState(null);
   const [authUser, setAuthUser] = useState(null);
@@ -6095,7 +6003,7 @@ function App() {
     setBooksDrawerOpen(false);
     setPricesDrawerOpen(false);
     setBugsDrawerOpen(false);
-    setTeamDrawerOpen(false);
+    setTimeClockDrawerOpen(false);
   }
 
   const BOTTOM_TAB_DEFS = {
@@ -6112,32 +6020,31 @@ function App() {
   };
 
   const UTILITY_DEFS = {
+    timeclock: {
+      label: "Time Clock", icon: Clock3,
+      onClick: () => { setTimeClockDrawerOpen((v) => !v); setCustomerDrawerOpen(false); setBooksDrawerOpen(false); setPricesDrawerOpen(false); setBugsDrawerOpen(false); },
+      active: timeClockDrawerOpen,
+    },
     prices: {
       label: "Price Sheet", icon: Tag,
-      onClick: () => { setPricesDrawerOpen((v) => !v); setCustomerDrawerOpen(false); setBooksDrawerOpen(false); setBugsDrawerOpen(false); setTeamDrawerOpen(false); },
+      onClick: () => { setPricesDrawerOpen((v) => !v); setTimeClockDrawerOpen(false); setCustomerDrawerOpen(false); setBooksDrawerOpen(false); setBugsDrawerOpen(false); },
       active: pricesDrawerOpen,
     },
     directory: {
       label: "Customer Directory", icon: Users,
-      onClick: () => { setCustomerDrawerOpen((v) => !v); setBooksDrawerOpen(false); setPricesDrawerOpen(false); setBugsDrawerOpen(false); setTeamDrawerOpen(false); },
+      onClick: () => { setCustomerDrawerOpen((v) => !v); setTimeClockDrawerOpen(false); setBooksDrawerOpen(false); setPricesDrawerOpen(false); setBugsDrawerOpen(false); },
       active: customerDrawerOpen,
     },
     books: {
       label: "Books", icon: BookOpen,
-      onClick: () => { setBooksDrawerOpen((v) => !v); setCustomerDrawerOpen(false); setPricesDrawerOpen(false); setBugsDrawerOpen(false); setTeamDrawerOpen(false); },
+      onClick: () => { setBooksDrawerOpen((v) => !v); setTimeClockDrawerOpen(false); setCustomerDrawerOpen(false); setPricesDrawerOpen(false); setBugsDrawerOpen(false); },
       active: booksDrawerOpen,
       hidden: authUser && authUser.role !== "owner",
     },
     bugs: {
       label: "Report a Bug", icon: Bug,
-      onClick: () => { setBugsDrawerOpen((v) => !v); setCustomerDrawerOpen(false); setPricesDrawerOpen(false); setBooksDrawerOpen(false); setTeamDrawerOpen(false); },
+      onClick: () => { setBugsDrawerOpen((v) => !v); setTimeClockDrawerOpen(false); setCustomerDrawerOpen(false); setPricesDrawerOpen(false); setBooksDrawerOpen(false); },
       active: bugsDrawerOpen,
-    },
-    team: {
-      label: "Team Logins", icon: KeyRound,
-      onClick: () => { setTeamDrawerOpen((v) => !v); setCustomerDrawerOpen(false); setPricesDrawerOpen(false); setBooksDrawerOpen(false); setBugsDrawerOpen(false); },
-      active: teamDrawerOpen,
-      hidden: authUser && authUser.role !== "owner",
     },
     darkmode: {
       label: "Toggle dark mode", icon: darkMode ? Sun : Moon,
@@ -6223,7 +6130,6 @@ function App() {
         {mode === "newcustomer" && (
           <NewCustomerView editRequest={editRequest} onConsumeEditRequest={() => setEditRequest(null)}
             prefillEstimate={prefillEstimate} onConsumePrefillEstimate={() => setPrefillEstimate(null)}
-            userRole={authUser ? authUser.role : "owner"}
             onSavedExisting={(phone) => {
               if (returnToDirectoryPhone && returnToDirectoryPhone === phone) {
                 setReturnToDirectoryPhone(null);
@@ -6252,8 +6158,22 @@ function App() {
                 onEditVisit={(item) => { setEditRequest(item); setMode("newcustomer"); setCustomerDrawerOpen(false); setReturnToDirectoryPhone(item.phone); }}
                 initialExpandedPhone={directoryReopenPhone}
                 onConsumeInitialExpandedPhone={() => setDirectoryReopenPhone(null)}
-                userRole={authUser ? authUser.role : "owner"}
               />
+            </div>
+          </div>
+        )}
+
+        {timeClockDrawerOpen && (
+          <div className="fixed inset-0 z-20" style={{ top: "45px", bottom: BOTTOM_TAB_HEIGHT }}>
+            <div className="absolute inset-0 bg-black/30" onClick={() => setTimeClockDrawerOpen(false)} />
+            <div className="absolute inset-0 bg-white overflow-y-auto max-w-md mx-auto">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 sticky top-0 bg-white z-10">
+                <p className="text-sm font-medium text-gray-900">Time Clock</p>
+                <button onClick={() => setTimeClockDrawerOpen(false)} aria-label="Close" className="text-gray-400">
+                  <X size={18} />
+                </button>
+              </div>
+              <TimeClockView authUser={authUser} />
             </div>
           </div>
         )}
@@ -6284,21 +6204,6 @@ function App() {
                 </button>
               </div>
               <BugReportsView userRole={authUser ? authUser.role : "owner"} currentUsername={authUser ? authUser.username : ""} />
-            </div>
-          </div>
-        )}
-
-        {teamDrawerOpen && (
-          <div className="fixed inset-0 z-20" style={{ top: "45px", bottom: BOTTOM_TAB_HEIGHT }}>
-            <div className="absolute inset-0 bg-black/30" onClick={() => setTeamDrawerOpen(false)} />
-            <div className="absolute inset-0 bg-white overflow-y-auto max-w-md mx-auto">
-              <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 sticky top-0 bg-white z-10">
-                <p className="text-sm font-medium text-gray-900">Team Logins</p>
-                <button onClick={() => setTeamDrawerOpen(false)} aria-label="Close" className="text-gray-400">
-                  <X size={18} />
-                </button>
-              </div>
-              <TeamView authToken={authToken} currentUsername={authUser ? authUser.username : ""} />
             </div>
           </div>
         )}

@@ -108,6 +108,10 @@ return false;
 const LAST_MINUTE_FEE = 15;
 const DEFAULT_DEADLINE_HOURS = 24;
 const DARK_MODE_CSS = `
+/* Pop-up windows: never taller than the screen, scroll inside themselves,
+   and freeze the page behind them while open (fixes mobile reschedule window). */
+.modal-panel { max-height: 85vh; max-height: 85dvh; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+html:has(.modal-panel), body:has(.modal-panel) { overflow: hidden; }
 :root {
 --accent: #4B2E70;
 --surface: #FFFFFF;
@@ -1322,7 +1326,7 @@ style={{ backgroundColor: ACCENT_HEX, opacity: saving ? 0.7 : 1 }}>
 </div>
 {pinModalOpen && (
 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-<div className="bg-white rounded-lg p-4 w-full max-w-xs shadow-lg">
+<div className="bg-white rounded-lg p-4 w-full max-w-xs shadow-lg modal-panel">
 <p className="text-sm font-medium text-gray-900 mb-1">
 {pinModalMode === "create" ? "Set an override password" : "Enter override password"}
 </p>
@@ -2835,7 +2839,7 @@ Delete photo
 )}
 {scheduleModalOpen && scheduleJob && (
 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-<div className="bg-white rounded-lg p-4 w-full max-w-sm shadow-lg">
+<div className="bg-white rounded-lg p-4 w-full max-w-sm shadow-lg modal-panel">
 {scheduleConfirmedInfo ? (
 <>
 <p className="text-sm font-semibold mb-1" style={{ color: "var(--success)" }}>Next appointment scheduled!</p>
@@ -2963,7 +2967,7 @@ className="flex-1 rounded-lg py-2 text-sm text-white" style={{ backgroundColor: 
 )}
 {bookingDetailOpen && (
 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4" onClick={closeBookingDetail}>
-<div className="bg-white rounded-lg p-4 w-full max-w-xs shadow-lg" onClick={(e) => e.stopPropagation()}>
+<div className="bg-white rounded-lg p-4 w-full max-w-xs shadow-lg modal-panel" onClick={(e) => e.stopPropagation()}>
 {bookingDetailLoading || !bookingDetail ? (
 <p className="text-xs text-gray-400">Loading…</p>
 ) : (
@@ -3044,7 +3048,7 @@ Close
 )}
 {confirmClearBooking && (
 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4" onClick={() => setConfirmClearBooking(null)}>
-<div className="bg-white rounded-lg p-4 w-full max-w-xs shadow-lg" onClick={(e) => e.stopPropagation()}>
+<div className="bg-white rounded-lg p-4 w-full max-w-xs shadow-lg modal-panel" onClick={(e) => e.stopPropagation()}>
 <p className="text-sm font-semibold text-gray-900 mb-1">Clear this time slot?</p>
 <p className="text-xs text-gray-500 mb-3">
 {formatSlotDate(confirmClearBooking.dateISO)} · {confirmClearBooking.slotLabel || (confirmClearBooking.slotId === "am" ? "Morning" : "Afternoon")}
@@ -3065,7 +3069,7 @@ Clear slot
 )}
 {rescheduleDayOpen && (
 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4" onClick={() => { if (!rescheduling) setRescheduleDayOpen(false); }}>
-<div className="bg-white rounded-lg p-4 w-full max-w-sm shadow-lg" onClick={(e) => e.stopPropagation()}>
+<div className="bg-white rounded-lg p-4 w-full max-w-sm shadow-lg modal-panel" onClick={(e) => e.stopPropagation()}>
 {!rescheduleResult ? (
 <>
 <p className="text-sm font-semibold text-gray-900 mb-1">Reschedule today's {todaysJobs.length} job{todaysJobs.length === 1 ? "" : "s"}</p>
@@ -4073,7 +4077,7 @@ Delete customer
 <p className="text-center text-xs px-4 pb-4" style={{ color: "var(--text-faint)" }}>{motivationLine}</p>
 {pauseTarget && (
 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4" onClick={() => setPauseTarget(null)}>
-<div className="bg-white rounded-lg p-4 w-full max-w-sm shadow-lg" onClick={(e) => e.stopPropagation()}>
+<div className="bg-white rounded-lg p-4 w-full max-w-sm shadow-lg modal-panel" onClick={(e) => e.stopPropagation()}>
 <p className="text-sm font-semibold text-gray-900 mb-1">Pause {pauseTarget.name}?</p>
 <p className="text-xs text-gray-500 mb-3">
 They'll stop showing up as missing a next appointment. Any appointments already booked for them stay on the calendar — clear those separately if the pause covers them.
@@ -4096,7 +4100,7 @@ Pause
 )}
 {deleteConfirmCustomer && (
 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4" onClick={cancelDeleteCustomer}>
-<div className="bg-white rounded-lg p-4 w-full max-w-sm shadow-lg" onClick={(e) => e.stopPropagation()}>
+<div className="bg-white rounded-lg p-4 w-full max-w-sm shadow-lg modal-panel" onClick={(e) => e.stopPropagation()}>
 <p className="text-sm font-semibold text-gray-900 mb-1">Delete {deleteConfirmCustomer.name}?</p>
 <p className="text-xs text-gray-500 mb-3">{deleteConfirmCustomer.phone}{deleteConfirmCustomer.address ? ` • ${deleteConfirmCustomer.address}` : ""}</p>
 <div className="border border-red-200 bg-red-50 rounded-lg p-3 mb-4">
@@ -4118,7 +4122,7 @@ className="flex-1 rounded-lg py-2 text-sm text-white bg-red-600" style={{ opacit
 )}
 {confirmClearNextVisit && (
 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4" onClick={() => setConfirmClearNextVisit(null)}>
-<div className="bg-white rounded-lg p-4 w-full max-w-xs shadow-lg" onClick={(e) => e.stopPropagation()}>
+<div className="bg-white rounded-lg p-4 w-full max-w-xs shadow-lg modal-panel" onClick={(e) => e.stopPropagation()}>
 <p className="text-sm font-semibold text-gray-900 mb-1">Clear this appointment?</p>
 {(() => {
 const nv = (nextVisits[confirmClearNextVisit.phone] || []).find((v) => v.startMs === confirmClearNextVisit.startMs);
@@ -5211,7 +5215,7 @@ Download expenses (.csv)
 <p className="text-center text-xs px-4 pb-4" style={{ color: "var(--text-faint)" }}>{motivationLine}</p>
 {importPreview && (
 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4" onClick={() => { if (!importing) setImportPreview(null); }}>
-<div className="bg-white rounded-lg p-4 w-full max-w-sm shadow-lg" onClick={(e) => e.stopPropagation()}>
+<div className="bg-white rounded-lg p-4 w-full max-w-sm shadow-lg modal-panel" onClick={(e) => e.stopPropagation()}>
 <p className="text-sm font-semibold text-gray-900 mb-1">Import this backup?</p>
 <p className="text-xs text-gray-500 mb-3">
 {importPreview.exportedAt ? `Backed up ${formatSlotDate(importPreview.exportedAt.slice(0, 10))}. ` : ""}
@@ -5239,7 +5243,7 @@ className="flex-1 rounded-lg py-2 text-sm text-white" style={{ backgroundColor: 
 )}
 {restockOpen && (
 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4" onClick={closeRestockModal}>
-<div className="bg-white rounded-lg p-4 w-full max-w-sm shadow-lg" onClick={(e) => e.stopPropagation()}>
+<div className="bg-white rounded-lg p-4 w-full max-w-sm shadow-lg modal-panel" onClick={(e) => e.stopPropagation()}>
 <p className="text-sm font-semibold text-gray-900 mb-3">Add Stock</p>
 <label className="block text-xs text-gray-500 mb-1">Item name</label>
 <input type="text" value={restockName} onChange={(e) => setRestockName(e.target.value)}
@@ -5277,7 +5281,7 @@ className="flex-1 rounded-lg py-2 text-sm text-white" style={{ backgroundColor: 
 )}
 {usageItem && (
 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4" onClick={() => setUsageItem(null)}>
-<div className="bg-white rounded-lg p-4 w-full max-w-sm shadow-lg" onClick={(e) => e.stopPropagation()}>
+<div className="bg-white rounded-lg p-4 w-full max-w-sm shadow-lg modal-panel" onClick={(e) => e.stopPropagation()}>
 <p className="text-sm font-semibold text-gray-900 mb-3">Log usage — {usageItem.name}</p>
 <label className="block text-xs text-gray-500 mb-1">Quantity used ({usageItem.unit})</label>
 <input type="number" min="0" step="1" value={usageQty} onChange={(e) => setUsageQty(e.target.value)}
@@ -5306,7 +5310,7 @@ className="flex-1 rounded-lg py-2 text-sm text-white" style={{ backgroundColor: 
 )}
 {deleteConfirmExpense && (
 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4" onClick={() => setDeleteConfirmExpense(null)}>
-<div className="bg-white rounded-lg p-4 w-full max-w-xs shadow-lg" onClick={(e) => e.stopPropagation()}>
+<div className="bg-white rounded-lg p-4 w-full max-w-xs shadow-lg modal-panel" onClick={(e) => e.stopPropagation()}>
 <p className="text-sm font-semibold text-gray-900 mb-1">Delete this expense?</p>
 <p className="text-xs text-gray-500 mb-4">{deleteConfirmExpense.description} — ${deleteConfirmExpense.amount.toFixed(2)}</p>
 <div className="flex gap-2">
@@ -6539,7 +6543,7 @@ const list = tours[role] || tours.crew;
 const current = list[Math.min(step, list.length - 1)];
 return (
 <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center px-4 pb-4 sm:pb-0" style={{ background: "rgba(17,12,24,.72)", backdropFilter: "blur(3px)" }}>
-<div className="w-full max-w-sm bg-white rounded-3xl shadow-2xl overflow-hidden border border-purple-100">
+<div className="w-full max-w-sm bg-white rounded-3xl shadow-2xl modal-panel border border-purple-100">
 <div className="flex items-center gap-4 p-4" style={{ background: "linear-gradient(135deg,#F6F0FC,#EFFBEA)" }}>
 <img src={GUNNER_DATA_URI} alt="Gunner" className="w-24 h-24 object-contain shrink-0" />
 <div>
@@ -6692,7 +6696,7 @@ function PhotoChecklistModal({ item, phase, userRole, onClose, onFlagsChanged, o
   return (
     <div className="fixed inset-0 flex items-end justify-center" style={{ zIndex: 60 }} onClick={(e) => e.stopPropagation()}>
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-      <div className="relative bg-white w-full max-w-md rounded-t-2xl p-4 overflow-y-auto" style={{ maxHeight: "90vh" }}>
+      <div className="relative bg-white w-full max-w-md rounded-t-2xl p-4 overflow-y-auto modal-panel" style={{ maxHeight: "90vh" }}>
         <div className="flex items-center justify-between mb-3">
           <p className="text-sm font-semibold text-gray-900">{title} · {item.customerName || "Job"}</p>
           <button onClick={onClose} aria-label="Close" className="text-gray-400"><X size={18} /></button>
@@ -6859,7 +6863,7 @@ function ShotListEditor({ phone, customerName, onClose }) {
   return (
     <div className="fixed inset-0 flex items-end justify-center" style={{ zIndex: 60 }} onClick={(e) => e.stopPropagation()}>
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-      <div className="relative bg-white w-full max-w-md rounded-t-2xl p-4 overflow-y-auto" style={{ maxHeight: "90vh" }}>
+      <div className="relative bg-white w-full max-w-md rounded-t-2xl p-4 overflow-y-auto modal-panel" style={{ maxHeight: "90vh" }}>
         <div className="flex items-center justify-between mb-2">
           <p className="text-sm font-semibold text-gray-900">{mode === "default" ? "Default photo checklist (all customers)" : `Photo checklist · ${customerName}`}</p>
           <button onClick={onClose} aria-label="Close" className="text-gray-400"><X size={18} /></button>
@@ -7218,7 +7222,7 @@ return (
 )}
 {authToken && roleNotification && !showSplash && (
 <div className="fixed inset-0 z-50 flex items-center justify-center px-5" style={{ background: "rgba(17,12,24,.72)", backdropFilter: "blur(3px)" }}>
-<div className="w-full max-w-sm bg-white rounded-3xl shadow-2xl overflow-hidden border border-purple-100">
+<div className="w-full max-w-sm bg-white rounded-3xl shadow-2xl modal-panel border border-purple-100">
 <div className="px-5 pt-5 pb-4 text-center" style={{ background: "linear-gradient(135deg,#F6F0FC,#EFFBEA)" }}>
 <img src={GUNNER_DATA_URI} alt="Gunner" className="mx-auto object-contain" style={{ width: 150, height: 150 }} />
 <div className="inline-flex rounded-full px-3 py-1 text-xs font-bold uppercase tracking-wider mt-1"
